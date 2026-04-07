@@ -105,6 +105,11 @@ def default_max_tokens_for_model(
 ) -> int:
     provider = validate_provider(provider)
     resolved = resolve_model(model, provider=provider)
+    
+    # [新增] 对本地模型/MLX小模型的限制进行强制锁死，保障本地 32K
+    if provider == "local" or (resolved and "mlx" in resolved.lower()):
+        return 32000
+
     if provider == "openai":
         openai_limits = (
             ("gpt-5", 8192),
@@ -207,7 +212,6 @@ def load_app_config(args: Namespace) -> AppConfig:
         config_paths=config_paths,
     )
 
-
 def _load_file_values(explicit_path: str | None) -> tuple[dict[str, Any], tuple[Path, ...]]:
     values: dict[str, Any] = {
         "top": {},
@@ -230,7 +234,6 @@ def _load_file_values(explicit_path: str | None) -> tuple[dict[str, Any], tuple[
         loaded_paths.append(path)
 
     return values, tuple(loaded_paths)
-
 
 def _read_config_file(path: Path) -> dict[str, Any]:
     try:
@@ -269,7 +272,6 @@ def _read_config_file(path: Path) -> dict[str, Any]:
 
     return values
 
-
 def _load_env_values() -> dict[str, Any]:
     values: dict[str, Any] = {}
     if os.getenv(_ENV_PROVIDER):
@@ -294,7 +296,6 @@ def _load_env_values() -> dict[str, Any]:
         values["buddy_model"] = os.environ[_ENV_BUDDY_MODEL]
     return values
 
-
 def _parse_max_tokens(raw_value: Any, default: int) -> int:
     if raw_value is None:
         return default
@@ -308,7 +309,6 @@ def _parse_max_tokens(raw_value: Any, default: int) -> int:
         raise ValueError("max_tokens must be a positive integer")
     return value
 
-
 def _parse_effort(raw_value: Any) -> str | None:
     if raw_value is None:
         return None
@@ -317,7 +317,6 @@ def _parse_effort(raw_value: Any) -> str | None:
         raise ValueError("effort must be one of: low, medium, high")
     return normalized
 
-
 def _infer_provider(provider_values: dict[str, dict[str, Any]]) -> str:
     openai_values = provider_values.get("openai", {})
     anthropic_values = provider_values.get("anthropic", {})
@@ -325,12 +324,10 @@ def _infer_provider(provider_values: dict[str, dict[str, Any]]) -> str:
         return "openai"
     return DEFAULT_PROVIDER
 
-
 def _merge_file_values(target: dict[str, Any], incoming: dict[str, Any]) -> None:
     target["top"].update(incoming.get("top", {}))
     for provider in ("anthropic", "openai"):
         target["providers"][provider].update(incoming.get("providers", {}).get(provider, {}))
-
 
 def _provider_env_values(env_values: dict[str, Any], provider: str) -> dict[str, Any]:
     provider = validate_provider(provider)

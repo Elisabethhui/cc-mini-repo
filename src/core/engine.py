@@ -6,7 +6,6 @@ from .config import DEFAULT_MODEL, default_max_tokens_for_model, resolve_model
 from .llm import LLMClient
 from .tools.base import Tool, ToolResult
 from .permissions import PermissionChecker
-#add
 # 核心导入：从pathlib标准库导入Path类
 from pathlib import Path
 from .token_budget import TokenBudgetManager, BudgetState
@@ -26,12 +25,7 @@ class AbortedError(Exception):
 
 
 def _normalize_content_block(block: Any) -> dict[str, Any]:
-    """Convert SDK content blocks into plain API dictionaries.
-
-    Anthropic-compatible backends can reject SDK-specific object fields that
-    are harmless against Anthropic's own endpoint, so only persist the wire
-    fields we actually want to send back.
-    """
+    """Convert SDK content blocks into plain API dictionaries."""
     if isinstance(block, dict):
         normalized = dict(block)
     else:
@@ -131,18 +125,15 @@ class Engine:
         self._messages: list[dict] = []
         self._aborted = False
         self._turn_start_len: int | None = None
-        self._active_stream = None  # reference to current HTTP stream
+        self._active_stream = None 
         self._session_store = session_store
         self._cost_tracker = cost_tracker
-        ##add
-        # Runtime protection helpers
+        
         self._budget_manager = TokenBudgetManager()
-        # repo_root 这里先用当前 cwd / project root；如果你后面有更准的根目录配置，可以替换
         self._checkpoint_manager = CheckpointManager(repo_root=Path.cwd())
         self._recent_written_artifacts: list[str] = []
         self._current_skill_name: str | None = None
-
-    # -- message accessors (for compact / resume / commands) ----------------
+        self._compact_service = None
 
     def get_messages(self) -> list[dict]:
         return list(self._messages)
@@ -167,8 +158,10 @@ class Engine:
 
     def get_model(self) -> str:
         return self._model
+        
     def set_current_skill_name(self, skill_name: str | None) -> None:
         self._current_skill_name = skill_name
+        
     def set_compact_service(self, compact_service) -> None:
         self._compact_service = compact_service
 
@@ -198,12 +191,11 @@ class Engine:
         )
 
     def _persist(self, message: dict) -> None:
-        """Append message to session store if available."""
         if self._session_store is not None:
             try:
                 self._session_store.append_message(message)
             except Exception:
-                pass  # don't break the conversation on I/O errors
+                pass
 
     @property
     def messages(self) -> list[dict]:
@@ -222,7 +214,6 @@ class Engine:
         self._system_prompt = value
 
     def last_assistant_text(self) -> str:
-        """Extract text from the last assistant message."""
         if not self._messages:
             return ""
         last = self._messages[-1]
@@ -242,11 +233,6 @@ class Engine:
         return ""
 
     def abort(self):
-        """Abort the current turn immediately.
-
-        Matches claude-code-main's AbortController.abort(): sets flag and
-        closes the active HTTP stream so the generator unblocks at once.
-        """
         self._aborted = True
         if self._active_stream is not None:
             try:
@@ -255,31 +241,11 @@ class Engine:
                 pass
 
     def cancel_turn(self):
-        """Roll back messages to the state before the current turn started.
-
-        Uses _turn_start_len (set at the beginning of submit()) to restore
-        messages to the exact state before the turn. This is more robust than
-        trying to walk back individual messages, especially when a turn has
-        multiple tool_use/tool_result cycles.
-        """
         if self._turn_start_len is not None:
             del self._messages[self._turn_start_len:]
             self._turn_start_len = None
 
     def submit(self, user_input: str | list) -> Iterator[tuple]:
-        """Send user message; yield events until the conversation turn completes.
-
-        Yields:
-          ("text", str)                         — streamed text chunk
-          ("tool_call", name, input, activity)  — before each tool executes
-          ("tool_executing", name, input, activity) — after permission granted, tool running
-          ("tool_result", name, input, result)  — after each tool executes
-          ("waiting",)                          — text done, waiting for tool_use
-          ("error", str)                        — non-fatal API error shown to user
-
-        Raises:
-          AbortedError — if abort() was called (by Esc listener or Ctrl+C)
-        """
         self._aborted = False
         self._turn_start_len = len(self._messages)
         self._messages.append({
@@ -288,11 +254,43 @@ class Engine:
         })
         self._persist(self._messages[-1])
 
-
         try:
             while True:
                 if self._aborted:
                     raise AbortedError()
+
+                # --- [新增] 事前拦截预检查 (Pre-flight Check) ---
+                token_count = self._budget_manager.estimate_from_messages(self._messages)
+                decision = self._budget_manager.decide(token_count)
+
+                # 脱水处理
+                if decision.should_dehydrate:
+                    maybe_dehydrate_messages(self._messages)
+                    token_count = self._budget_manager.estimate_from_messages(self._messages)
+                    decision = self._budget_manager.decide(token_count)
+
+                # 自动摘要压缩处理
+                if decision.should_compact and self._compact_service:
+                    try:
+                        self._compact_service.compact(self._messages)
+                        token_count = self._budget_manager.estimate_from_messages(self._messages)
+                        decision = self._budget_manager.decide(token_count)
+                    except Exception:
+                        pass # 若压缩异常则跳过，交由 Checkpoint 兜底
+
+                # 如果依旧爆仓，直接切断防止 OOM
+                if decision.should_checkpoint or decision.should_stop:
+                    self._checkpoint_manager.write_checkpoint(
+                        skill=self._current_skill_name or "unknown",
+                        reason=f"Pre-flight check: Context OOM protected ({decision.reason})",
+                        next_skill="/resume-from-checkpoint",
+                        artifacts_written=list(self._recent_written_artifacts),
+                        token_estimate=decision.token_estimate,
+                        budget_state=decision.state.value,
+                    )
+                    yield ("text", "\n\n[System Alert: 上下文逼近本地显存 OOM 临界点。已在 API 请求前自动拦截并保存 Checkpoint！请运行 /resume-from-checkpoint 开启干净会话]\n")
+                    return
+                # ------------------------------------------------
 
                 tool_uses = []
 
@@ -325,7 +323,7 @@ class Engine:
 
                             final = stream.get_final_message()
                             _api_elapsed = time.monotonic() - _api_t0
-                            # Track token usage / cost
+                            
                             if final.usage and self._cost_tracker:
                                 self._cost_tracker.add_usage(self._model, {
                                     "input_tokens": getattr(final.usage, "input_tokens", 0) or 0,
@@ -334,8 +332,8 @@ class Engine:
                                     "cache_creation_input_tokens": getattr(final.usage, "cache_creation_input_tokens", 0) or 0,
                                 }, api_duration_s=_api_elapsed)
                                 yield ("usage", final.usage)
-                                #add
-                                # Runtime token budget check after usage is available
+                                
+                                # Post-flight usage check
                                 token_count = self._budget_manager.update_from_usage(
                                     usage=final.usage,
                                     fallback_messages=self._messages,
@@ -358,11 +356,11 @@ class Engine:
                                     )
                                     yield ("text", "\n[checkpoint saved; run /resume-from-checkpoint]\n")
                                     return
-                                #
+                                    
                             for block in final.content:
                                 if _block_type(block) == "tool_use":
                                     tool_uses.append(block)
-                        break  # success, exit retry loop
+                        break 
                     except AbortedError:
                         raise
                     except Exception as e:
@@ -399,34 +397,11 @@ class Engine:
                     "content": _normalize_message_content(final.content),
                 })
                 self._persist(self._messages[-1])
-                #add
-                # Secondary budget check after assistant reply enters history
-                token_count = self._budget_manager.estimate_from_messages(self._messages)
-                decision = self._budget_manager.decide(token_count)
-
-                if decision.should_dehydrate:
-                    maybe_dehydrate_messages(self._messages)
-
-                if decision.should_checkpoint:
-                    self._checkpoint_manager.write_checkpoint(
-                        skill=self._current_skill_name or "unknown",
-                        reason=decision.reason,
-                        next_skill="/resume-from-checkpoint",
-                        artifacts_written=list(self._recent_written_artifacts),
-                        token_estimate=decision.token_estimate,
-                        budget_state=decision.state.value,
-                    )
-                    yield ("text", "\n[checkpoint saved; run /resume-from-checkpoint]\n")
-                    return
-                #
 
                 if not tool_uses:
                     break
 
                 tool_results = []
-
-                # Partition into batches: consecutive read-only tools run in
-                # parallel; a non-read-only tool runs alone.
                 batches: list[list] = []
                 for tu in tool_uses:
                     t = self._tools.get(_block_name(tu))
@@ -441,10 +416,8 @@ class Engine:
                         raise AbortedError()
 
                     if is_concurrent and len(batch) > 1:
-                        # --- parallel execution for read-only tools ---
-                        # Phase 1: emit tool_call events + check permissions
-                        approved: list[tuple] = []  # (tool_use, tool, activity)
-                        denied_results: dict[str, ToolResult] = {}  # by tool_use_id
+                        approved: list[tuple] = []  
+                        denied_results: dict[str, ToolResult] = {}  
                         for tu in batch:
                             tn = _block_name(tu)
                             ti = _block_input(tu)
@@ -457,7 +430,6 @@ class Engine:
                             else:
                                 approved.append((tu, tool, act))
 
-                        # Phase 2: emit tool_executing for approved, then run in parallel
                         executed_results: dict[str, ToolResult] = {}
                         if approved:
                             for tu, tool, act in approved:
@@ -478,7 +450,6 @@ class Engine:
                                         executed_results[_block_id(tu)] = ToolResult(
                                             content=f"Tool execution error: {exc}", is_error=True)
 
-                        # Phase 3: emit results in original batch order
                         for tu in batch:
                             tid = _block_id(tu)
                             tn = _block_name(tu)
@@ -493,10 +464,7 @@ class Engine:
                                 "content": result.content,
                                 "is_error": result.is_error,
                             })
-    
-
                     else:
-                        # --- sequential execution (single tool or non-read-only) ---
                         for tu in batch:
                             if self._aborted:
                                 raise AbortedError()
@@ -525,28 +493,7 @@ class Engine:
                     "content": _normalize_message_content(tool_results),
                 })
                 self._persist(self._messages[-1])
-                #add
-                # Tool results are now part of message history; re-check budget
-                token_count = self._budget_manager.estimate_from_messages(self._messages)
-                decision = self._budget_manager.decide(token_count)
 
-                dehydrate_result = None
-                if decision.should_dehydrate:
-                    dehydrate_result = maybe_dehydrate_messages(self._messages)
-
-                if decision.should_checkpoint:
-                    self._checkpoint_manager.write_checkpoint(
-                        skill=self._current_skill_name or "unknown",
-                        reason=decision.reason,
-                        next_skill="/resume-from-checkpoint",
-                        artifacts_written=list(self._recent_written_artifacts),
-                        token_estimate=decision.token_estimate,
-                        budget_state=decision.state.value,
-                        dehydrated_items=(dehydrate_result.replaced_count if dehydrate_result else 0),
-                    )
-                    yield ("text", "\n[checkpoint saved; run /resume-from-checkpoint]\n")
-                    return
-                #
         except AbortedError:
             self.cancel_turn()
             raise
@@ -562,34 +509,37 @@ class Engine:
             return ToolResult(content="Permission denied.", is_error=True)
 
         try:
-            # Snapshot file for diff if it's a write tool we want to track
             old_lines: list[str] | None = None
             if self._cost_tracker and tool_name in ("Edit", "Write"):
                 fp = tool_input.get("file_path", "")
                 try:
-                    from pathlib import Path
                     p = Path(fp)
                     old_lines = p.read_text().splitlines() if p.exists() else []
                 except Exception:
                     old_lines = None
 
             result = tool.execute(**tool_input)
-            ##add
-            # Track recently written artifacts for checkpoint recovery
+
+            # --- [新增] 工具返回结果强制截断防护 (防止读几万行文件直接炸毁 32K 内存) ---
+            MAX_TOOL_OUTPUT_CHARS = 8000
+            if not result.is_error and isinstance(result.content, str) and len(result.content) > MAX_TOOL_OUTPUT_CHARS:
+                hidden_chars = len(result.content) - MAX_TOOL_OUTPUT_CHARS
+                trunc_msg = f"\n\n[System Alert: 结果过长已被自动截断保护，隐藏了 {hidden_chars} 字符。请优先使用 grep 或带有 start_line 的读取功能分块加载！]"
+                result = ToolResult(
+                    content=result.content[:MAX_TOOL_OUTPUT_CHARS] + trunc_msg,
+                    is_error=result.is_error
+                )
+            # ----------------------------------------------------------------------
+
             if tool_name in ("Edit", "Write") and not result.is_error:
                 fp = tool_input.get("file_path", "")
                 if isinstance(fp, str) and fp:
                     self._recent_written_artifacts.append(fp)
-                    # Keep only the most recent few
                     self._recent_written_artifacts = self._recent_written_artifacts[-20:]
             
-            #
-
-            # Track line changes for Edit/Write
             if self._cost_tracker and old_lines is not None and not result.is_error:
                 fp = tool_input.get("file_path", "")
                 try:
-                    from pathlib import Path
                     new_lines = Path(fp).read_text().splitlines()
                     added = max(len(new_lines) - len(old_lines), 0)
                     removed = max(len(old_lines) - len(new_lines), 0)
@@ -607,18 +557,15 @@ def _block_type(block: Any) -> str | None:
         return block.get("type")
     return getattr(block, "type", None)
 
-
 def _block_name(block: Any) -> str:
     if isinstance(block, dict):
         return str(block.get("name", ""))
     return str(getattr(block, "name", ""))
 
-
 def _block_id(block: Any) -> str:
     if isinstance(block, dict):
         return str(block.get("id", ""))
     return str(getattr(block, "id", ""))
-
 
 def _block_input(block: Any) -> dict[str, Any]:
     if isinstance(block, dict):

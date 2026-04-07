@@ -15,12 +15,12 @@ class BudgetState(str, Enum):
 
 @dataclass
 class BudgetThresholds:
-    soft_limit: int = 18_000
-    compact_limit: int = 22_000
-    checkpoint_limit: int = 26_000
-    hard_stop_limit: int = 29_000
+    # 针对 32K 模型的保守设置，预留 8K 用于模型输出和安全缓冲
+    soft_limit: int = 16_000      # 触发脱水
+    compact_limit: int = 20_000   # 触发摘要压缩
+    checkpoint_limit: int = 24_000 # 触发快照截断
+    hard_stop_limit: int = 26_000 # 绝对死线
     max_context: int = 32_768
-
 
 @dataclass
 class BudgetDecision:
@@ -43,14 +43,11 @@ class TokenBudgetManager:
         return self._last_token_estimate
 
     def estimate_from_messages(self, messages: list[dict[str, Any]]) -> int:
-        """
-        粗略估算 token。
-        这里先用字符数 / 4 近似，后面如果 provider 有 usage，可覆盖。
-        """
         total_chars = 0
         for msg in messages:
             total_chars += self._count_message_chars(msg)
-        estimate = max(1, total_chars // 4)
+        # 中文和代码符号密度高，建议改为 // 1.5 或 // 2
+        estimate = max(1, int(total_chars / 1.8)) 
         self._last_token_estimate = estimate
         return estimate
 
