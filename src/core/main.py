@@ -565,18 +565,26 @@ def run_query(engine: Engine, user_input: str | list, print_mode: bool,
                         preview = _tool_preview(tool_name, tool_input)
                         key = f"{tool_name}({preview})"
                         pending_tools[key] = (tool_name, f"↳ {key}")
-
+                # 找到这段代码 (大概在 run_query 函数的 300 行左右)
                 elif event[0] == "tool_executing":
                     if not quiet:
                         _, tool_name, tool_input, activity = event
-                        n = len(pending_tools)
-                        if n > 1:
-                            names = [tn for tn, _ in pending_tools.values()]
-                            spinner.start(_collapsed_tool_summary(names))
+                        
+                        # ======== [修改开始: 插入以下防护逻辑] ========
+                        # 如果是交互式工具，强制停止 Spinner，防止画面撕裂
+                        if tool_name in ("AskUserQuestion", "EnterPlanMode", "ExitPlanMode"):
+                            spinner.stop()
                         else:
-                            _, line = next(iter(pending_tools.values()), ("", f"↳ {tool_name}"))
-                            activity_text = activity or f"Running {tool_name}…"
-                            spinner.start(f"{line} … {activity_text}")
+                        # ======== [修改结束] ========
+                        
+                            n = len(pending_tools)
+                            if n > 1:
+                                names = [tn for tn, _ in pending_tools.values()]
+                                spinner.start(_collapsed_tool_summary(names))
+                            else:
+                                _, line = next(iter(pending_tools.values()), ("", f"↳ {tool_name}"))
+                                activity_text = activity or f"Running {tool_name}…"
+                                spinner.start(f"{line} … {activity_text}")
 
                 elif event[0] == "tool_result":
                     if not quiet:
@@ -800,6 +808,7 @@ def main() -> None:
         model=app_config.model,
         effort=app_config.effort,
     )
+    #add
     engine.set_compact_service(compact_service)
 
 

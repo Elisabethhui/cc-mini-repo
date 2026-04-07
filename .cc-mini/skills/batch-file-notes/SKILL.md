@@ -37,6 +37,10 @@ Prefer in this order:
 5. agents / planners
 6. tools / helpers
 
-## Stop condition
-Stop after the selected batch is completed.
-Do not begin module-level summarization.
+## Stop condition & Next Steps
+When the batch is successfully processed and manifests are updated:
+1. Do NOT just output text recommending next steps.
+2. You MUST use the `AskUserQuestion` tool to ask the user how to proceed.
+3. Formulate the question as: "Batch complete. Do you want me to process the next batch of files?"
+   - Option 1: "Yes, process next batch" (If chosen, run yourself again to pick the next files)
+   - Option 2: "No, stop here"
