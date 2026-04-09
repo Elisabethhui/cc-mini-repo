@@ -51,7 +51,9 @@ from .sandbox.manager import SandboxManager
 from .tools.ask_user import AskUserQuestionTool
 from .tools.agent import AgentTool, SendMessageTool, TaskStopTool
 from .tools.bash import BashTool
+from .tools.file_edit_strict import FileEditTool as FileEditTool_S
 from .tools.file_edit import FileEditTool
+
 from .tools.file_read import FileReadTool
 from .tools.file_write import FileWriteTool
 from .tools.glob_tool import GlobTool
@@ -651,6 +653,18 @@ def _run_dream(engine: Engine, memory_dir: Path,
         console.print("[dim]Dream consolidation complete. Memory index updated.[/dim]")
 
 
+# === 在原有的 imports 下方追加 ===
+import os
+# 请确保你的 config.py 已经加上了 RunMode 和 get_run_mode
+# 导入模式与知识基座
+from .config import RunMode, get_run_mode
+from .knowledge.ingester import WikiIngester
+from .knowledge.watcher import start_wiki_watcher
+# 导入工具集
+from .tools.ast_read import ASTReadTool
+# ... 其他原有导入 ...
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cc-mini",
                                      description="Minimal AI coding assistant")
@@ -682,7 +696,19 @@ def main() -> None:
                         help="Minimum new sessions before auto-dream triggers (default: 5)")
     parser.add_argument("--coordinator", action="store_true",
                         help="Enable coordinator mode with background workers")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="standard",  # 🔥 这里就是你要的默认选项
+        choices=["standard", "wiki_strict"],
+        help="Select run mode: standard (default) / wiki_strict"
+    )
     args = parser.parse_args()
+    # os.environ["CC_MINI_MODE"] = args.mode
+    default_mode = os.getenv("CC_MINI_MODE", "standard").lower()
+    args.mode=default_mode
+    run_mode = get_run_mode()
+
 
     try:
         app_config = load_app_config(args)
@@ -707,12 +733,21 @@ def main() -> None:
     if args.coordinator:
         set_coordinator_mode(True)
 
+    # ## [WIKI_STRICT] 修改工具构造器，支持模式切换
     def _build_base_tools() -> list:
-        return [
-            FileReadTool(), GlobTool(), GrepTool(),
-            FileEditTool(), FileWriteTool(),
+        base = [
+            GlobTool(), GrepTool(),
+            FileWriteTool(),
             BashTool(sandbox_manager=sandbox_mgr),
         ]
+        if run_mode == RunMode.WIKI_STRICT:
+            # 模式专属：使用 ASTRead 和重构后的 FileEdit (假设已在 tools.__init__ 覆盖或导入)
+            base.append(ASTReadTool())
+            base.append(FileEditTool_S())
+        else:
+            base.append(FileReadTool())
+            base.append(FileEditTool())
+        return base
 
     worker_tool_names = [tool.name for tool in _build_base_tools()]
 
@@ -983,6 +1018,19 @@ def main() -> None:
                     f"[dim]  ● {s['description']} — "
                     f"{uses} tool use{'s' if uses != 1 else ''} · {activity}[/dim]"
                 )
+    # === [新增代码] Wiki_Strict 模式启动拦截 ===
+  
+    # ## [WIKI_STRICT] 启动核心：扫描地图与挂载监听
+    watcher_thread = None
+    if run_mode == RunMode.WIKI_STRICT:
+        console.print("[bold cyan]🚀 已启用 WIKI_STRICT 模式 (32K 极致降维护航)[/bold cyan]")
+        console.print("[dim]正在扫描工作区并生成 AST 架构地图...[/dim]")
+        
+        ingester = WikiIngester(cwd)
+        ingester.ingest_all()  # 阻塞式首次扫描    
+        watcher_thread = start_wiki_watcher(cwd, ingester)
+        # 将 Wiki 索引路径注入环境供其他模块参考
+        os.environ["CC_MINI_WIKI_PATH"] = str(ingester.index_file)
 
     while True:
         _drain_worker_notifications()
@@ -1233,6 +1281,11 @@ def main() -> None:
     # Print cost summary on exit
     if cost_tracker.total_cost_usd > 0:
         console.print(f"\n[dim]{cost_tracker.format_cost()}[/dim]")
+    # === [新增代码] 优雅停机 ===
+    if watcher_thread is not None:
+        console.print("[dim]正在关闭 Wiki 监听器...[/dim]")
+        watcher_thread.stop()
+        watcher_thread.join()
 
 
 def _handle_sandbox_command(
