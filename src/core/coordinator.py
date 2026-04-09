@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from typing import Iterable
-
+from .config import RunMode, get_run_mode
+from .flow_state import get_flow_state_prompt
 
 COORDINATOR_ENV_VAR = "CC_MINI_COORDINATOR"
 
@@ -59,6 +60,16 @@ def get_coordinator_user_context(worker_tools: Iterable[str]) -> dict[str, str]:
 
 
 def get_coordinator_system_prompt() -> str:
+    """
+    根据当前的 RunMode 动态返回调度器 Prompt。
+    如果是 WIKI_STRICT，则返回强制状态机流；否则返回原版多 Agent 流。
+    """
+    mode = get_run_mode()
+    
+    if mode == RunMode.WIKI_STRICT:
+        # Phase 3: 注入状态机流水线
+        return get_flow_state_prompt()
+
     return """You are Claude Code, an AI assistant that orchestrates software engineering tasks across multiple workers.
 
 ## 1. Your Role
@@ -286,10 +297,14 @@ You:
   Fix for the null pointer is in progress. Still waiting to hear back about the test suite.
 """
 
-
 def get_worker_system_prompt() -> str:
+    mode = get_run_mode()
+    if mode == RunMode.WIKI_STRICT:
+        return """You are a strict implementation worker. 
+You MUST use ASTRead to view code, and Edit to change code. 
+Follow the [STATE] format dictated by the coordinator."""
+        
     return """You are a worker operating under a coordinator.
-
 - Execute the assigned task directly and autonomously.
 - You do not talk to the end user; your final answer goes back to the
   coordinator.
@@ -298,3 +313,4 @@ def get_worker_system_prompt() -> str:
 - Report concrete file paths, commands, results, and any residual risk.
 - Do not try to spawn other workers.
 """
+

@@ -3,7 +3,7 @@ import os
 from core.permissions import PermissionChecker
 from core.tools.file_read import FileReadTool
 from core.tools.bash import BashTool
-from core.tools.file_edit import FileEditTool
+from core.tools.file_edit_strict import FileEditTool
 
 
 def test_read_only_tool_always_allowed():

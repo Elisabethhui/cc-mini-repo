@@ -116,7 +116,7 @@ class PlanModeManager:
         from .tools.file_read import FileReadTool
         from .tools.glob_tool import GlobTool
         from .tools.grep_tool import GrepTool
-        from .tools.file_edit import FileEditTool
+        from .tools.file_edit_strict import FileEditTool
         from .tools.file_write import FileWriteTool
 
         plan_tools: list[Tool] = [

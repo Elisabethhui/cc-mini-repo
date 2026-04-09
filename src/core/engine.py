@@ -149,7 +149,6 @@ class Engine:
 
     def get_system_prompt(self) -> str:
         return self._system_prompt
-
     def set_session_store(self, store: SessionStore | None) -> None:
         self._session_store = store
 
@@ -261,6 +260,7 @@ class Engine:
 
                 # --- [新增] 事前拦截预检查 (Pre-flight Check) ---
                 token_count = self._budget_manager.estimate_from_messages(self._messages)
+                token_count = int(token_count * 1.5)  # 👈 关键
                 decision = self._budget_manager.decide(token_count)
 
                 # 脱水处理
@@ -397,6 +397,22 @@ class Engine:
                     "content": _normalize_message_content(final.content),
                 })
                 self._persist(self._messages[-1])
+                # --- [新增] 强制二次检查：防止工具结果塞爆上下文 ---
+                token_count = self._budget_manager.estimate_from_messages(self._messages)
+                decision = self._budget_manager.decide(token_count)
+                
+                if decision.should_checkpoint:
+                    self._checkpoint_manager.write_checkpoint(
+                        skill=self._current_skill_name or "unknown",
+                        reason=f"Post-tool burst protection: {decision.reason}",
+                        next_skill="/resume-from-checkpoint",
+                        artifacts_written=list(self._recent_written_artifacts),
+                        token_estimate=decision.token_estimate,
+                        budget_state=decision.state.value,
+                    )
+                    yield ("text", "\n\n[System Alert: 工具返回数据过大，已触发熔断保护以防止 OOM。请运行 /resume-from-checkpoint]\n")
+                    return
+
 
                 if not tool_uses:
                     break

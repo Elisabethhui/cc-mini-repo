@@ -3,6 +3,7 @@
 import subprocess
 from datetime import date
 from pathlib import Path
+import os
 
 
 # ---------------------------------------------------------------------------
@@ -274,5 +275,10 @@ def build_system_prompt(cwd: str | None = None, memory_dir: Path | None = None) 
     companion_text = _get_companion_intro()
     if companion_text:
         sections.append(companion_text)
+    
+        from pathlib import Path
+
 
     return "\n\n".join(s for s in sections if s)
+
+

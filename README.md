@@ -65,7 +65,14 @@ git clone https://github.com/e10nMa2k/cc-mini.git
 cd cc-mini
 pip install -e ".[dev]"
 ```
-
+export CC_MINI_MODEL="Qwen3.5-9B-MLX-4bit"                    
+export CC_MINI_PROVIDER=openai
+export OPENAI_BASE_URL=http://localhost:8000/v1
+export OPENAI_API_KEY=w2hqq0809
+export CC_MINI_MAX_TOKENS=32000
+export CC_MINI_AUTO_APPROVE=1
+export CC_MINI_AUTO_COMPACT=1
+export CC_MINI_MODE=wiki_strict
 ### Set API Key
 
 ```bash
