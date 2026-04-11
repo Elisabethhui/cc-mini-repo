@@ -1,0 +1,110 @@
+# 🗺️ CC-MINI 全局架构知识地图 (The Wiki)
+
+## 核心模块与职责
+- **`README.md`**: 包含 21 个章节章节。
+- **`docs/buddy.md`**: 包含 7 个章节章节。
+- **`docs/configuration.md`**: 包含 10 个章节章节。
+- **`docs/coordinator.md`**: 包含 6 个章节章节。
+- **`docs/memory.md`**: 包含 5 个章节章节。
+- **`docs/sandbox.md`**: 包含 7 个章节章节。
+- **`docs/skills.md`**: 包含 10 个章节章节。
+- **`memory-bank/architecture.md`**: 包含 14 个章节章节。
+- **`memory-bank/game-design-document.md`**: 包含 54 个章节章节。
+- **`memory-bank/implementation-plan.md`**: 包含 187 个章节章节。
+- **`memory-bank/progress.md`**: 包含 9 个章节章节。
+- **`memory-bank/tech-stack.md`**: 包含 31 个章节章节。
+- **`src/core/_keylistener.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/buddy/animator.py`**: 包含 1 个类, 1 个顶层函数。
+- **`src/core/buddy/commands.py`**: 包含 0 个类, 7 个顶层函数。
+- **`src/core/buddy/companion.py`**: 包含 1 个类, 12 个顶层函数。
+- **`src/core/buddy/mood.py`**: 包含 0 个类, 6 个顶层函数。
+- **`src/core/buddy/observer.py`**: 包含 1 个类, 3 个顶层函数。
+- **`src/core/buddy/poke_game/badges.py`**: 包含 0 个类, 6 个顶层函数。
+- **`src/core/buddy/poke_game/battle.py`**: 包含 1 个类, 4 个顶层函数。
+- **`src/core/buddy/poke_game/commands.py`**: 包含 1 个类, 2 个顶层函数。
+- **`src/core/buddy/poke_game/events.py`**: 包含 0 个类, 2 个顶层函数。
+- **`src/core/buddy/poke_game/lockfile.py`**: 包含 0 个类, 4 个顶层函数。
+- **`src/core/buddy/poke_game/loop.py`**: 包含 0 个类, 4 个顶层函数。
+- **`src/core/buddy/poke_game/narrator.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/buddy/poke_game/persistence.py`**: 包含 0 个类, 5 个顶层函数。
+- **`src/core/buddy/poke_game/render.py`**: 包含 0 个类, 10 个顶层函数。
+- **`src/core/buddy/poke_game/state.py`**: 包含 0 个类, 13 个顶层函数。
+- **`src/core/buddy/poke_game/types.py`**: 包含 7 个类, 0 个顶层函数。
+- **`src/core/buddy/poke_game/world.py`**: 包含 0 个类, 6 个顶层函数。
+- **`src/core/buddy/prompt.py`**: 包含 0 个类, 1 个顶层函数。
+- **`src/core/buddy/render.py`**: 包含 0 个类, 7 个顶层函数。
+- **`src/core/buddy/sprites.py`**: 包含 0 个类, 3 个顶层函数。
+- **`src/core/buddy/storage.py`**: 包含 0 个类, 16 个顶层函数。
+- **`src/core/buddy/types.py`**: 包含 6 个类, 0 个顶层函数。
+- **`src/core/checkpoint.py`**: 包含 2 个类, 1 个顶层函数。
+- **`src/core/commands.py`**: 包含 1 个类, 16 个顶层函数。
+- **`src/core/compact.py`**: 包含 1 个类, 9 个顶层函数。
+- **`src/core/config.py`**: 包含 2 个类, 12 个顶层函数。
+- **`src/core/context.py`**: 包含 0 个类, 13 个顶层函数。
+- **`src/core/coordinator.py`**: 包含 0 个类, 9 个顶层函数。
+- **`src/core/cost_tracker.py`**: 包含 3 个类, 4 个顶层函数。
+- **`src/core/dehydration.py`**: 包含 1 个类, 3 个顶层函数。
+- **`src/core/engine.py`**: 包含 2 个类, 7 个顶层函数。
+- **`src/core/flow_state.py`**: 包含 1 个类, 1 个顶层函数。
+- **`src/core/knowledge/ingester.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/knowledge/watcher.py`**: 包含 1 个类, 1 个顶层函数。
+- **`src/core/llm.py`**: 包含 5 个类, 17 个顶层函数。
+- **`src/core/main.py`**: 包含 3 个类, 10 个顶层函数。
+- **`src/core/memory.py`**: 包含 0 个类, 17 个顶层函数。
+- **`src/core/permissions.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/plan.py`**: 包含 1 个类, 2 个顶层函数。
+- **`src/core/sandbox/checker.py`**: 包含 1 个类, 1 个顶层函数。
+- **`src/core/sandbox/command_matcher.py`**: 包含 2 个类, 5 个顶层函数。
+- **`src/core/sandbox/config.py`**: 包含 2 个类, 8 个顶层函数。
+- **`src/core/sandbox/manager.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/sandbox/wrapper.py`**: 包含 0 个类, 4 个顶层函数。
+- **`src/core/session.py`**: 包含 2 个类, 6 个顶层函数。
+- **`src/core/skills.py`**: 包含 1 个类, 10 个顶层函数。
+- **`src/core/skills_bundled.py`**: 包含 0 个类, 5 个顶层函数。
+- **`src/core/token_budget.py`**: 包含 4 个类, 0 个顶层函数。
+- **`src/core/tools/agent.py`**: 包含 3 个类, 0 个顶层函数。
+- **`src/core/tools/ask_user.py`**: 包含 1 个类, 2 个顶层函数。
+- **`src/core/tools/ast_read.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/base.py`**: 包含 2 个类, 0 个顶层函数。
+- **`src/core/tools/bash.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/file_edit.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/file_edit_strict.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/file_read.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/file_write.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/glob_tool.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/grep_tool.py`**: 包含 1 个类, 0 个顶层函数。
+- **`src/core/tools/plan_tools.py`**: 包含 2 个类, 0 个顶层函数。
+- **`src/core/worker_manager.py`**: 包含 3 个类, 0 个顶层函数。
+- **`tests/README.md`**: 包含 1 个章节章节。
+- **`tests/conftest.py`**: 包含 11 个类, 1 个顶层函数。
+- **`tests/core/test_checkpoint.py`**: 包含 0 个类, 1 个顶层函数。
+- **`tests/core/test_compact_runtime.py`**: 包含 1 个类, 2 个顶层函数。
+- **`tests/core/test_dehydration.py`**: 包含 0 个类, 2 个顶层函数。
+- **`tests/core/test_engine_runtime_budget.py`**: 包含 0 个类, 3 个顶层函数。
+- **`tests/core/test_main_autocompact.py`**: 包含 0 个类, 1 个顶层函数。
+- **`tests/core/test_token_budget.py`**: 包含 0 个类, 2 个顶层函数。
+- **`tests/core/test_worker_manager_checkpoint.py`**: 包含 1 个类, 1 个顶层函数。
+- **`tests/test_ask_user.py`**: 包含 0 个类, 11 个顶层函数。
+- **`tests/test_buddy_companion.py`**: 包含 5 个类, 0 个顶层函数。
+- **`tests/test_buddy_mood.py`**: 包含 6 个类, 0 个顶层函数。
+- **`tests/test_buddy_storage.py`**: 包含 2 个类, 0 个顶层函数。
+- **`tests/test_config.py`**: 包含 0 个类, 9 个顶层函数。
+- **`tests/test_context.py`**: 包含 0 个类, 12 个顶层函数。
+- **`tests/test_coordinator.py`**: 包含 0 个类, 5 个顶层函数。
+- **`tests/test_cost_tracker.py`**: 包含 0 个类, 19 个顶层函数。
+- **`tests/test_engine.py`**: 包含 1 个类, 10 个顶层函数。
+- **`tests/test_llm.py`**: 包含 0 个类, 5 个顶层函数。
+- **`tests/test_main.py`**: 包含 2 个类, 5 个顶层函数。
+- **`tests/test_permissions.py`**: 包含 0 个类, 6 个顶层函数。
+- **`tests/test_sandbox_checker.py`**: 包含 2 个类, 0 个顶层函数。
+- **`tests/test_sandbox_command_matcher.py`**: 包含 5 个类, 0 个顶层函数。
+- **`tests/test_sandbox_config.py`**: 包含 3 个类, 0 个顶层函数。
+- **`tests/test_sandbox_integration.py`**: 包含 2 个类, 1 个顶层函数。
+- **`tests/test_sandbox_manager.py`**: 包含 6 个类, 0 个顶层函数。
+- **`tests/test_sandbox_wrapper.py`**: 包含 4 个类, 0 个顶层函数。
+- **`tests/test_session_mode.py`**: 包含 0 个类, 1 个顶层函数。
+- **`tests/test_skills.py`**: 包含 9 个类, 1 个顶层函数。
+- **`tests/test_tools.py`**: 包含 0 个类, 23 个顶层函数。
+- **`tests/test_worker_manager.py`**: 包含 2 个类, 4 个顶层函数。
+
+*注：这是系统的降维视图。当需要修改特定模块时，请调用工具读取 `.cc-mini/wiki/entities/` 下的对应笔记。*

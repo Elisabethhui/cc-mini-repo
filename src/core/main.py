@@ -481,8 +481,27 @@ class _SpinnerManager:
         self._live: Live | None = None
         self._spinner_text = "Thinking…"
 
+    # def start(self, text: str = "Thinking…"):
+    #     self._spinner_text = text
+    #     self._live = Live(
+    #         Spinner("dots", text=Text(self._spinner_text, style="dim")),
+    #         console=self._console,
+    #         refresh_per_second=12,
+    #         transient=True,
+    #     )
+    #     self._live.start()
     def start(self, text: str = "Thinking…"):
         self._spinner_text = text
+        
+        # ======== [核心修复] ========
+        # 如果当前已经有一个正在运行的 Spinner，不要重复创建，直接更新内容即可
+        if self._live is not None:
+            self._live.update(
+                Spinner("dots", text=Text(self._spinner_text, style="dim"))
+            )
+            return
+        # ==========================
+            
         self._live = Live(
             Spinner("dots", text=Text(self._spinner_text, style="dim")),
             console=self._console,
