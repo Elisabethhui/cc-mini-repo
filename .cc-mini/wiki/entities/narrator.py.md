@@ -1,3 +1,9 @@
+---
+source_hash: dc78186681868919
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/narrator.py
 
 ## Classes

@@ -300,10 +300,10 @@ You:
 def get_worker_system_prompt() -> str:
     mode = get_run_mode()
     if mode == RunMode.WIKI_STRICT:
-        return """You are a strict implementation worker. 
-You MUST use ASTRead to view code, and Edit to change code. 
+        return """You are a strict implementation worker.
+You MUST use ASTRead to view code, and Edit to change code.
 Follow the [STATE] format dictated by the coordinator."""
-        
+
     return """You are a worker operating under a coordinator.
 - Execute the assigned task directly and autonomously.
 - You do not talk to the end user; your final answer goes back to the
@@ -313,4 +313,29 @@ Follow the [STATE] format dictated by the coordinator."""
 - Report concrete file paths, commands, results, and any residual risk.
 - Do not try to spawn other workers.
 """
+
+
+def get_minimal_goal_stack() -> dict[str, str]:
+    """
+    Phase 1 占位函数：返回最小 Goal Stack 结构。
+
+    包含以下字段：
+    - global_goal: 全局目标（当前 session 的总目标）
+    - step_goal: 当前步骤目标（由 coordinator 或 plan 设定）
+    - task_goal: 当前任务目标（当前正在执行的子任务）
+    - current_action: 正在执行的具体动作
+    - done_definition: 完成定义（什么样的状态算完成）
+    - out_of_scope: 明确不在当前步骤范围内的事项
+
+    当前为占位实现，返回空字符串占位值。
+    后续 Phase 将接入实际的 task orchestration。
+    """
+    return {
+        "global_goal": "",
+        "step_goal": "",
+        "task_goal": "",
+        "current_action": "",
+        "done_definition": "",
+        "out_of_scope": "",
+    }
 

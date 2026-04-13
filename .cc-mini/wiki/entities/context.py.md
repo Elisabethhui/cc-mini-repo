@@ -1,3 +1,9 @@
+---
+source_hash: b7faba018ca230a7
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/context.py
 
 ## Classes

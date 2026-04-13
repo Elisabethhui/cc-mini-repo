@@ -1,3 +1,9 @@
+---
+source_hash: 00b0b8754133b3c1
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_worker_manager.py
 
 ## Classes

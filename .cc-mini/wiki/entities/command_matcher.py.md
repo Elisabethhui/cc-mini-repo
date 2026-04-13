@@ -1,3 +1,9 @@
+---
+source_hash: 233e1b0488b7002c
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/sandbox/command_matcher.py
 
 ## Classes

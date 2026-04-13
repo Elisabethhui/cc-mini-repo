@@ -1,3 +1,9 @@
+---
+source_hash: b66f11122b4e92e1
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/lockfile.py
 
 ## Classes

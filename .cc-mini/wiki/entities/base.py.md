@@ -1,3 +1,9 @@
+---
+source_hash: 8c4d2d9c94707eb9
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/base.py
 
 ## Classes

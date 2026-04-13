@@ -1,3 +1,9 @@
+---
+source_hash: ae2b46865faf8df8
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_sandbox_manager.py
 
 ## Classes

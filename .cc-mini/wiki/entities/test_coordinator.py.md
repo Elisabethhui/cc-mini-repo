@@ -1,3 +1,9 @@
+---
+source_hash: e6d5a229f48fd800
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_coordinator.py
 
 ## Classes

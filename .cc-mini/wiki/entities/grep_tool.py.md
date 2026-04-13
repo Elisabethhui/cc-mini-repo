@@ -1,3 +1,9 @@
+---
+source_hash: 48d857a96875376a
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/grep_tool.py
 
 ## Classes

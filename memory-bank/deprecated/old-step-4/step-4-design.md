@@ -1,3 +1,5 @@
+> Deprecated: 该文件基于旧 Step 4 设计，不再作为后续执行依据。
+> 自 v2.0 起，后续阶段以 system-design-v2 与 phases/ 下的 Phase 文件为准。
 # Step 4 Design
 
 ## Current Status

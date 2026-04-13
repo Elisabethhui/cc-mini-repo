@@ -1,3 +1,9 @@
+---
+source_hash: fe46469b0ec2cd0c
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/glob_tool.py
 
 ## Classes

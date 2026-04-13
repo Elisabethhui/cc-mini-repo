@@ -1,0 +1,87 @@
+---
+source_hash: 6aa6a7e3e0fa0c4c
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
+# 文献大纲: memory-bank/context-safeguard-full.md
+
+- Context Safeguard Full
+  - 1. 文档目的
+  - 2. 问题背景：为什么 32K 小模型一定会出事
+    - 2.1 真正的瓶颈不是“模型不会写”，而是“模型记不住”
+    - 2.2 为什么编程任务比普通聊天更容易 OOM
+    - 2.3 对你这个项目来说，OOM 不只是“报错”，而是“逻辑断裂”
+  - 3. 为什么原有做法不够
+    - 3.1 原有思路：被动压缩
+    - 3.2 为什么“简单摘要”不够
+    - 3.3 为什么“删中间，留头尾”不够
+  - 4. Context Safeguard 的真正定义
+    - 1. 风险升高时
+    - 2. 可恢复状态
+    - 3. 固化到外部记忆层
+    - 4. 最小消息流恢复继续执行
+  - 5. Context Safeguard 的完整目标
+    - 目标 1：提前知道“快炸了”
+    - 目标 2：在危险区里主动抽取最关键状态
+    - 目标 3：保护任务连续性
+    - 目标 4：保护失败记忆
+    - 目标 5：保护目标锚点
+    - 目标 6：减少未来 token 浪费
+  - 6. Context Safeguard 不是单一功能，而是 4 个子能力
+    - 6.1 Token Risk Monitor
+    - 6.2 Dehydrator
+    - 6.3 Snapshot Writer
+    - 6.4 Resume Builder
+  - 7. Token Risk Monitor：为什么不能只做一个阈值
+    - 7.1 单阈值思路的问题
+    - 7.2 建议使用多级风险等级
+    - 7.3 风险等级不只是数值，更应该返回“建议动作”
+  - 8. Dehydration：什么叫“上下文脱水”
+    - 8.1 为什么叫脱水
+    - 8.2 脱水不是摘要
+  - 9. Context Snapshot：为什么必须分成两份
+    - 9.1 只用自然语言快照不够
+    - 9.2 只用结构化快照也不够
+    - A. Runtime Snapshot
+    - B. Markdown Snapshot
+  - 10. Snapshot 里必须保留哪些信息
+    - 10.1 Goal 信息
+    - 10.2 Localization 信息
+    - 10.3 Change State 信息
+    - 10.4 Failure Memory
+    - 10.5 Next Action
+  - 11. 写到哪里：外部状态层的落点设计
+    - 11.1 Checkpoint
+    - 11.2 Wiki Log
+    - 11.3 Reports / Context Snapshots
+  - 12. 恢复时怎么继续，不是怎么“聊天继续”
+    - 12.1 只保留最小消息流
+    - 12.2 先加载 snapshot，再决定下一动作
+    - 12.3 默认不要重新全文读项目
+  - 13. Context Safeguard 应该挂在哪些模块里
+    - 13.1 `token_budget.py`
+    - 13.2 `engine.py`
+    - 13.3 `compact.py`
+    - 13.4 `knowledge/dehydrator.py`
+    - 13.5 `session.py`
+    - 13.6 `wiki/logger.py` 或 `wiki/service.py`
+  - 14. 与 TaskPack / Goal Stack 的关系
+    - 14.1 与 TaskPack 的关系
+    - 14.2 与 Goal Stack 的关系
+  - 15. 与 patch / debug 的关系
+    - 15.1 patch 场景
+    - 15.2 debug 场景
+  - 16. 新手最容易犯的 5 个错
+    - 错误 1：把 Context Safeguard 理解成摘要功能
+    - 错误 2：只做一个 bool 阈值
+    - 错误 3：只把 summary 塞回 messages，不写外部状态
+    - 错误 4：snapshot 过长
+    - 错误 5：恢复时重新全文读取
+  - 17. 对你当前项目最实用的落地顺序
+    - 第一步：最小可用版
+    - 第二步：任务感知版
+    - 第三步：长期 wiki 融合版
+  - 18. 你为什么现在应该先理解这个，而不是先折腾插件
+  - 19. 最后总结
+  - 20. 下一份应该写什么

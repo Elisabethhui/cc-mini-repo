@@ -1,3 +1,9 @@
+---
+source_hash: 0ccae8a91c4e2225
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/_keylistener.py
 
 ## Classes

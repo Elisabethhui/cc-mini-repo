@@ -1,3 +1,9 @@
+---
+source_hash: e79ee1231b9895ff
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_cost_tracker.py
 
 ## Classes

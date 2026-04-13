@@ -1,3 +1,9 @@
+---
+source_hash: 4667dacd032be6fe
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/main.py
 
 ## Classes

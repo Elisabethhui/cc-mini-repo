@@ -1,3 +1,9 @@
+---
+source_hash: eb33b8024fd4ce13
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/types.py
 
 ## Classes

@@ -13,11 +13,12 @@ console = Console()
 class FileEditTool(Tool):
     name = "Edit"
     description = (
-        "Performs EXACT string replacements in files.\n\n"
+        "Performs EXACT string replacements in files with preview and rollback support.\n\n"
         "Usage:\n"
         "- Provide `old_string` exactly as it appears in the file (including all whitespace and indentation).\n"
         "- If your edit fails because of indentation or whitespace mismatch, the system will ask the human User to verify your intent.\n"
         "- Do NOT use this tool to write entire new files.\n"
+        "- Use `preview_only=true` to see the diff without applying changes.\n"
     )
     input_schema = {
         "type": "object",
@@ -26,6 +27,7 @@ class FileEditTool(Tool):
             "old_string": {"type": "string", "description": "Exact string to replace (Search Block)"},
             "new_string": {"type": "string", "description": "Replacement string (Replace Block)"},
             "replace_all": {"type": "boolean", "description": "Replace all occurrences", "default": False},
+            "preview_only": {"type": "boolean", "description": "Only preview the diff without applying", "default": False},
         },
         "required": ["file_path", "old_string", "new_string"],
     }
@@ -34,19 +36,72 @@ class FileEditTool(Tool):
         super().__init__()
         # 记录每个文件的编辑失败次数
         self._fail_counts: Dict[str, int] = {}
+        # 备份路径映射: file_path -> backup_path
+        self._backups: Dict[str, Path] = {}
 
     def get_activity_description(self, **kwargs) -> str | None:
         file_path = kwargs.get("file_path", "")
         return f"Safely Editing {Path(file_path).name}" if file_path else None
 
-    def _backup_file(self, path: Path):
-        """修改前自动备份文件"""
+    def _backup_file(self, path: Path) -> Path:
+        """修改前自动备份文件，返回备份路径"""
         backup_dir = path.parent / ".cc-mini" / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        backup_path = backup_dir / f"{path.name}.bak"
+        # Use timestamp for unique backup
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"{path.name}.{timestamp}.bak"
         shutil.copy2(path, backup_path)
+        self._backups[str(path)] = backup_path
+        return backup_path
 
-    def execute(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False) -> ToolResult:
+    def rollback(self, file_path: str) -> ToolResult:
+        """
+        回滚最后一次编辑。
+        Phase 4: 提供 rollback 入口。
+        """
+        path = Path(file_path)
+        backup_path = self._backups.get(file_path)
+
+        if not backup_path or not backup_path.exists():
+            # Try to find the most recent backup
+            backup_dir = path.parent / ".cc-mini" / "backups"
+            if backup_dir.exists():
+                backups = sorted(backup_dir.glob(f"{path.name}.*.bak"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if backups:
+                    backup_path = backups[0]
+
+        if not backup_path or not backup_path.exists():
+            return ToolResult(content=f"Error: No backup found for {file_path}", is_error=True)
+
+        try:
+            shutil.copy2(backup_path, path)
+            return ToolResult(content=f"Successfully rolled back {file_path} from {backup_path.name}")
+        except Exception as e:
+            return ToolResult(content=f"Error rolling back: {e}", is_error=True)
+
+    def preview_diff(self, content: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
+        """
+        Phase 4: 生成 diff 预览
+        """
+        if replace_all:
+            new_content = content.replace(old_string, new_string)
+        else:
+            new_content = content.replace(old_string, new_string, 1)
+
+        # Generate unified diff
+        old_lines = content.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+
+        diff = difflib.unified_diff(
+            old_lines, new_lines,
+            fromfile="original",
+            tofile="modified",
+            lineterm=""
+        )
+        return "".join(diff)
+
+    def execute(self, file_path: str, old_string: str, new_string: str, replace_all: bool = False, preview_only: bool = False) -> ToolResult:
         path = Path(file_path)
         if not path.exists():
             return ToolResult(content=f"Error: File not found: {file_path}", is_error=True)
@@ -85,12 +140,17 @@ class FileEditTool(Tool):
         if count > 1 and not replace_all:
             return ToolResult(content=f"Error: old_string found {count} times. Use replace_all=true or add context.", is_error=True)
 
+        # Phase 4: Preview mode - only show diff without applying
+        if preview_only:
+            diff = self.preview_diff(content, old_string, new_string, replace_all)
+            return ToolResult(content=f"[Preview Mode - No changes applied]\n\n{diff}")
+
         # 执行替换
-        self._backup_file(path)
+        backup_path = self._backup_file(path)
         new_content = content.replace(old_string, new_string) if replace_all else content.replace(old_string, new_string, 1)
         path.write_text(new_content, encoding="utf-8")
-        
+
         # 成功后重置计数
         self._fail_counts[file_path] = 0
         replaced = count if replace_all else 1
-        return ToolResult(content=f"Successfully replaced {replaced} occurrence(s) in {file_path}. Backup saved.")
+        return ToolResult(content=f"Successfully replaced {replaced} occurrence(s) in {file_path}. Backup: {backup_path.name}")

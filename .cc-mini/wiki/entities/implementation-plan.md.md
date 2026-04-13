@@ -1,3 +1,9 @@
+---
+source_hash: 9ff3f06e2a51b176
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # 文献大纲: memory-bank/implementation-plan.md
 
 - Implementation Plan

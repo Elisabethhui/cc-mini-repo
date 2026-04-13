@@ -1,3 +1,9 @@
+---
+source_hash: 09f8ded7bce32dab
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/core/test_compact_runtime.py
 
 ## Classes

@@ -263,6 +263,26 @@ class Engine:
                 token_count = int(token_count * 1.5)  # 👈 关键
                 decision = self._budget_manager.decide(token_count)
 
+                # Token risk 最小可见输出 (Phase 1)
+                if decision.state != BudgetState.NORMAL:
+                    print(f"[Token Risk] state={decision.state.value}, tokens={decision.token_estimate}")
+
+                # Phase 2: 最小 dehydration + snapshot 闭环
+                if decision.state in (BudgetState.WARNING, BudgetState.COMPACT, BudgetState.CHECKPOINT, BudgetState.HARD_STOP):
+                    from .knowledge.dehydrator import MinimalDehydrator
+                    dehydrator = MinimalDehydrator(str(Path.cwd()))
+                    d_result = dehydrator.check_and_dehydrate(
+                        self._messages,
+                        budget_state=decision.state.value,
+                        token_estimate=decision.token_estimate,
+                        current_step=self._current_skill_name or "engine_loop",
+                        active_goal="token_budget_protection",
+                    )
+                    if d_result["dehydrated"]:
+                        print(f"[Dehydration] {d_result['replaced_count']} messages dehydrated")
+                        if d_result["snapshot_path"]:
+                            print(f"[Snapshot] Saved to {d_result['snapshot_path']}")
+
                 # 脱水处理
                 if decision.should_dehydrate:
                     maybe_dehydrate_messages(self._messages)

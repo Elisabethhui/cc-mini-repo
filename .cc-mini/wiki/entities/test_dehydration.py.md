@@ -1,3 +1,9 @@
+---
+source_hash: f44632f4a95fab2c
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/core/test_dehydration.py
 
 ## Classes

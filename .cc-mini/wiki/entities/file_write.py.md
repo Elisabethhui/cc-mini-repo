@@ -1,3 +1,9 @@
+---
+source_hash: 9ac671ac2fbaa16d
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/file_write.py
 
 ## Classes

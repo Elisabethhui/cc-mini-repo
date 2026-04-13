@@ -1,3 +1,9 @@
+---
+source_hash: 7f7e367cbba82c46
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/skills_bundled.py
 
 ## Classes

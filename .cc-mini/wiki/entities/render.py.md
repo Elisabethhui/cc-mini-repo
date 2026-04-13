@@ -1,3 +1,9 @@
+---
+source_hash: da7fb4d9b81a12a2
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/render.py
 
 ## Classes

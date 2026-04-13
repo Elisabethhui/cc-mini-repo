@@ -1,3 +1,9 @@
+---
+source_hash: 81b2218c1e47124a
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_ask_user.py
 
 ## Classes

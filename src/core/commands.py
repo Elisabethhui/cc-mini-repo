@@ -450,6 +450,232 @@ def _cmd_plan(ctx: CommandContext, args: str) -> None:
             ctx.pending_query = description
 
 
+def _cmd_prime(ctx: CommandContext, args: str) -> None:
+    """Prime a task: generate TaskPack from current digest and snapshot."""
+    from .wiki.taskpack import TaskPackManager, TaskPack, TaskStatus
+    from pathlib import Path
+    import os
+
+    if not args.strip():
+        ctx.console.print("[dim]Usage: /prime <task-id> [target-files...][/dim]")
+        return
+
+    parts = args.strip().split()
+    task_id = parts[0]
+    target_files = parts[1:] if len(parts) > 1 else []
+
+    # Default to current directory python files if no targets specified
+    if not target_files:
+        cwd = Path.cwd()
+        target_files = [str(f.relative_to(cwd)) for f in cwd.rglob("*.py") if "__pycache__" not in str(f)][:5]
+
+    manager = TaskPackManager(str(os.getcwd()))
+
+    ctx.console.print(f"[dim]Priming task '{task_id}' with {len(target_files)} target files...[/dim]")
+
+    taskpack = manager.generate_taskpack_from_digest(
+        task_id=task_id,
+        title=f"Task: {task_id}",
+        target_files=target_files,
+    )
+
+    # Save TaskPack
+    filepath = manager.save_taskpack(taskpack)
+
+    ctx.console.print(f"[green]✓[/green] TaskPack primed and saved to: {filepath}")
+    ctx.console.print(f"[dim]  - Status: {taskpack.status.value}[/dim]")
+    ctx.console.print(f"[dim]  - Target files: {len(taskpack.target_files)}[/dim]")
+    ctx.console.print(f"[dim]  - Primary symbols: {len(taskpack.primary_symbols)}[/dim]")
+    ctx.console.print(f"[dim]  - Entity status: {dict(taskpack.entity_status)}[/dim]")
+
+
+def _cmd_plan_wiki(ctx: CommandContext, args: str) -> None:
+    """Generate structured plan in wiki_strict mode (TaskPack -> EditSpec)."""
+    from .wiki.taskpack import TaskPackManager, EditSpec, TaskStatus
+    from .config import get_run_mode, RunMode
+    from pathlib import Path
+    import os
+
+    # Only available in wiki_strict mode
+    mode = get_run_mode()
+    if mode != RunMode.WIKI_STRICT:
+        ctx.console.print("[dim]/plan wiki_strict is only available in wiki_strict mode. Use standard /plan for plan mode.[/dim]")
+        # Delegate to standard plan command
+        _cmd_plan(ctx, args)
+        return
+
+    if not args.strip():
+        ctx.console.print("[dim]Usage: /plan <task-id>[/dim]")
+        ctx.console.print("[dim]Generate structured plan from existing TaskPack.[/dim]")
+        return
+
+    task_id = args.strip().split()[0]
+    manager = TaskPackManager(str(os.getcwd()))
+
+    # Load existing TaskPack
+    taskpack = manager.load_taskpack(task_id)
+    if taskpack is None:
+        ctx.console.print(f"[red]TaskPack '{task_id}' not found. Run /prime {task_id} first.[/red]")
+        return
+
+    ctx.console.print(f"[dim]Generating structured plan for task '{task_id}'...[/dim]")
+
+    # Check if ready for plan
+    ready, msg = taskpack.is_ready_for_plan()
+    if not ready:
+        ctx.console.print(f"[yellow]⚠ TaskPack not ready: {msg}[/yellow]")
+        return
+
+    # Check entity statuses
+    raw_ast_files = [f for f, s in taskpack.entity_status.items() if s.value == "raw_ast"]
+    stale_files = [f for f, s in taskpack.entity_status.items() if s.value == "stale"]
+
+    # Phase 3: Deferred Issue 写入 (越界控制)
+    if raw_ast_files:
+        ctx.console.print(f"[yellow]⚠ The following files are raw_ast, need digest first:[/yellow]")
+        for f in raw_ast_files:
+            ctx.console.print(f"  - {f}")
+        ctx.console.print(f"[dim]Run /digest to process these files before planning.[/dim]")
+
+        # Write deferred issue for blocking files
+        from .wiki.taskpack import DeferredIssue
+        for f in raw_ast_files:
+            issue = DeferredIssue(
+                path=f,
+                reason="Entity is raw_ast - must digest before planning",
+                suggested_action=f"/digest {f}",
+                status="open",
+            )
+            manager.save_deferred_issue(issue)
+        ctx.console.print(f"[dim]  → {len(raw_ast_files)} deferred issue(s) written[/dim]")
+
+    if stale_files:
+        ctx.console.print(f"[yellow]⚠ The following files are stale, need reconcile:[/yellow]")
+        for f in stale_files:
+            ctx.console.print(f"  - {f}")
+        # Write deferred issue for stale files
+        from .wiki.taskpack import DeferredIssue
+        for f in stale_files:
+            issue = DeferredIssue(
+                path=f,
+                reason="Entity is stale - may need reconcile or re-digest",
+                suggested_action=f"/digest {f} or manual review",
+                status="open",
+            )
+            manager.save_deferred_issue(issue)
+        ctx.console.print(f"[dim]  → {len(stale_files)} deferred issue(s) written[/dim]")
+
+    # Phase 3: 越界控制 - raw_ast 文件必须先 digest，否则阻止进入 patch
+    if raw_ast_files:
+        ctx.console.print(f"\n[red]✗ Cannot generate EditSpecs while files are raw_ast.[/red]")
+        ctx.console.print(f"[dim]Please digest the files first, then re-run /plan {task_id}[/dim]")
+        # Save TaskPack with deferred status
+        taskpack.status = TaskStatus.DEFERRED
+        manager.save_taskpack(taskpack)
+        return
+
+    # Generate minimal EditSpecs (placeholder for actual implementation)
+    for target_file in taskpack.target_files[:3]:  # Limit to first 3 files
+        edit_spec = EditSpec(
+            target_file=target_file,
+            target_symbol="",
+            operation="update",
+            description=f"Modify {target_file} according to task requirements",
+            constraints=taskpack.constraints,
+            verification=taskpack.verification_steps,
+        )
+        taskpack.edit_specs.append(edit_spec)
+
+    # Update status
+    taskpack.status = TaskStatus.PLANNED
+
+    # Save updated TaskPack
+    manager.save_taskpack(taskpack)
+
+    # Output structured plan
+    ctx.console.print(f"\n[bold cyan]=== Structured Plan for {task_id} ===[/bold cyan]\n")
+
+    ctx.console.print("[bold]Goal Stack:[/bold]")
+    gs = taskpack.goal_stack
+    ctx.console.print(f"  Global: {gs.global_goal}")
+    ctx.console.print(f"  Step: {gs.step_goal}")
+    ctx.console.print(f"  Task: {gs.task_goal}")
+    ctx.console.print(f"  Done: {gs.done_definition}")
+    ctx.console.print(f"  Out of Scope: {gs.out_of_scope}")
+
+    ctx.console.print(f"\n[bold]Target Files ({len(taskpack.target_files)}):[/bold]")
+    for f in taskpack.target_files:
+        status = taskpack.entity_status.get(f, "unknown")
+        ctx.console.print(f"  - {f} [{status}]")
+
+    ctx.console.print(f"\n[bold]Primary Symbols ({len(taskpack.primary_symbols)}):[/bold]")
+    for s in taskpack.primary_symbols[:10]:  # Limit output
+        ctx.console.print(f"  - {s}")
+
+    ctx.console.print(f"\n[bold]Edit Specs ({len(taskpack.edit_specs)}):[/bold]")
+    for i, es in enumerate(taskpack.edit_specs, 1):
+        ctx.console.print(f"  {i}. {es.operation}: {es.target_file}")
+        if es.description:
+            ctx.console.print(f"     {es.description}")
+
+    if taskpack.hotspots:
+        ctx.console.print(f"\n[bold]Hotspots:[/bold]")
+        for h in taskpack.hotspots:
+            ctx.console.print(f"  - {h}")
+
+    ctx.console.print(f"\n[green]✓[/green] Plan generated. Ready for review before patch phase.")
+    ctx.console.print(f"[dim]  TaskPack updated and saved.[/dim]")
+
+
+def _cmd_scan(ctx: CommandContext, args: str) -> None:
+    """Scan workspace and generate/update wiki entities."""
+    from .knowledge.ingester import WikiIngester
+
+    workspace_root = str(os.getcwd())
+    ingester = WikiIngester(workspace_root)
+
+    ctx.console.print("[dim]Scanning workspace and building wiki entities...[/dim]")
+    ingester.ingest_all()
+    ctx.console.print("[green]✓[/green] Scan complete. Wiki entities updated.")
+
+
+def _cmd_digest(ctx: CommandContext, args: str) -> None:
+    """Digest specific target or --changed files."""
+    from .knowledge.ingester import WikiIngester
+    from .knowledge.watcher import get_changed_tracker
+    from pathlib import Path
+
+    workspace_root = Path.cwd()
+    ingester = WikiIngester(str(workspace_root))
+
+    if args.strip().lower() == "--changed":
+        # Phase 2 minimal: use ChangedFileTracker
+        ctx.console.print("[dim]Digesting changed files...[/dim]")
+        tracker = get_changed_tracker(workspace_root)
+        changed = tracker.get_and_clear()
+        if changed:
+            for fpath in changed:
+                f = Path(workspace_root) / fpath
+                if f.exists():
+                    ingester.ingest_file(f)
+            ctx.console.print(f"[green]✓[/green] Digested {len(changed)} changed files.")
+        else:
+            ctx.console.print("[dim]No changed files tracked. Run /scan first.[/dim]")
+    elif args.strip():
+        # Digest specific file
+        target = Path(args.strip())
+        if not target.is_absolute():
+            target = workspace_root / target
+        if target.exists():
+            ingester.ingest_file(target)
+            ctx.console.print(f"[green]✓[/green] Digested: {target.name}")
+        else:
+            ctx.console.print(f"[red]File not found: {args}[/red]")
+    else:
+        # No args - show usage
+        ctx.console.print("[dim]Usage: /digest <file-path> or /digest --changed[/dim]")
+
+
 # (name, description, handler)
 _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("help",     "Show available commands",                         _cmd_help),
@@ -463,7 +689,10 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("skills",   "List all available skills",                       _cmd_skills),
     ("cost",    "Show token usage and cost summary",               _cmd_cost),
     ("model",   "Show or switch model [model-name]",               _cmd_model),
-    ("plan",    "Enter plan mode or show current plan",             _cmd_plan),
+    ("plan",    "Enter plan mode or show current plan",             _cmd_plan_wiki),
+    ("scan",    "Scan workspace and build wiki entities",          _cmd_scan),
+    ("digest",  "Digest file or --changed [path|--changed]",       _cmd_digest),
+    ("prime",   "Prime a task: generate TaskPack [task-id]",       _cmd_prime),
 ]
 
 _HANDLERS: dict[str, object] = {name: handler for name, _, handler in _COMMAND_TABLE}

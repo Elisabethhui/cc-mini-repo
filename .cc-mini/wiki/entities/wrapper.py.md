@@ -1,3 +1,9 @@
+---
+source_hash: 21623e65b4dbbf6c
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/sandbox/wrapper.py
 
 ## Classes

@@ -1,3 +1,9 @@
+---
+source_hash: 3fc703acd749cdb0
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_sandbox_command_matcher.py
 
 ## Classes

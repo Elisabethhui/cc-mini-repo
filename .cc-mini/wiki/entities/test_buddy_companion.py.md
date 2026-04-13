@@ -1,3 +1,9 @@
+---
+source_hash: 34c7cb787494558b
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_buddy_companion.py
 
 ## Classes

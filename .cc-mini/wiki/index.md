@@ -1,18 +1,85 @@
 # 🗺️ CC-MINI 全局架构知识地图 (The Wiki)
 
 ## 核心模块与职责
-- **`README.md`**: 包含 21 个章节章节。
-- **`docs/buddy.md`**: 包含 7 个章节章节。
-- **`docs/configuration.md`**: 包含 10 个章节章节。
-- **`docs/coordinator.md`**: 包含 6 个章节章节。
-- **`docs/memory.md`**: 包含 5 个章节章节。
-- **`docs/sandbox.md`**: 包含 7 个章节章节。
-- **`docs/skills.md`**: 包含 10 个章节章节。
-- **`memory-bank/architecture.md`**: 包含 14 个章节章节。
-- **`memory-bank/game-design-document.md`**: 包含 54 个章节章节。
-- **`memory-bank/implementation-plan.md`**: 包含 187 个章节章节。
-- **`memory-bank/progress.md`**: 包含 9 个章节章节。
-- **`memory-bank/tech-stack.md`**: 包含 31 个章节章节。
+- **`.pytest_cache/README.md`**: 包含 1 个章节。
+- **`AGENTS-wiki.md`**: 包含 6 个章节。
+- **`AGENTS.md`**: 包含 12 个章节。
+- **`CLAUDE.md`**: 包含 24 个章节。
+- **`README.md`**: 包含 26 个章节。
+- **`docs/buddy.md`**: 包含 7 个章节。
+- **`docs/configuration.md`**: 包含 10 个章节。
+- **`docs/coordinator.md`**: 包含 6 个章节。
+- **`docs/memory.md`**: 包含 5 个章节。
+- **`docs/sandbox.md`**: 包含 7 个章节。
+- **`docs/skills.md`**: 包含 10 个章节。
+- **`docs/wiki/README.md`**: 包含 1 个章节。
+- **`docs/wiki/SCHEMA.md`**: 包含 7 个章节。
+- **`docs/wiki/current-status.md`**: 包含 1 个章节。
+- **`docs/wiki/github-and-raw-strategy.md`**: 包含 3 个章节。
+- **`docs/wiki/index.md`**: 包含 1 个章节。
+- **`docs/wiki/log.md`**: 包含 2 个章节。
+- **`docs/wiki/project-overview.md`**: 包含 1 个章节。
+- **`docs/wiki/sources-and-data.md`**: 包含 1 个章节。
+- **`manifests/README.md`**: 包含 1 个章节。
+- **`memory-bank/architecture.md`**: 包含 19 个章节。
+- **`memory-bank/cc-mini-wiki-strict-upgraded-v2.md`**: 包含 16 个章节。
+- **`memory-bank/context-safeguard-full.md`**: 包含 79 个章节。
+- **`memory-bank/current-task-phase1-module.md`**: 包含 22 个章节。
+- **`memory-bank/current-task.md`**: 包含 26 个章节。
+- **`memory-bank/decisions.md`**: 包含 13 个章节。
+- **`memory-bank/deprecated/old-step-4/README.md`**: 包含 7 个章节。
+- **`memory-bank/deprecated/old-step-4/step-4-design.md`**: 包含 12 个章节。
+- **`memory-bank/deprecated/old-step-4/step-4-exec-pack.md`**: 包含 14 个章节。
+- **`memory-bank/deprecated/old-step-4/step-4-review-checklist.md`**: 包含 8 个章节。
+- **`memory-bank/exec-packs/README.md`**: 包含 16 个章节。
+- **`memory-bank/findings.md`**: 包含 26 个章节。
+- **`memory-bank/game-design-document.md`**: 包含 3 个章节。
+- **`memory-bank/goal-anchoring-full.md`**: 包含 64 个章节。
+- **`memory-bank/implementation-plan copy.md`**: 包含 3 个章节。
+- **`memory-bank/implementation-plan.md`**: 包含 187 个章节。
+- **`memory-bank/phase-0-4-compact-index.md`**: 包含 8 个章节。
+- **`memory-bank/phase-0-4-full-guide.md`**: 包含 87 个章节。
+- **`memory-bank/phases/phase-0-exec.md`**: 包含 11 个章节。
+- **`memory-bank/phases/phase-0-exec_claude.md`**: 包含 12 个章节。
+- **`memory-bank/phases/phase-1-exec.md`**: 包含 10 个章节。
+- **`memory-bank/phases/phase-2-exec.md`**: 包含 9 个章节。
+- **`memory-bank/phases/phase-3-exec.md`**: 包含 9 个章节。
+- **`memory-bank/phases/phase-4-exec.md`**: 包含 9 个章节。
+- **`memory-bank/progress copy.md`**: 包含 6 个章节。
+- **`memory-bank/progress.md`**: 包含 14 个章节。
+- **`memory-bank/reset-note-v2.md`**: 包含 7 个章节。
+- **`memory-bank/schema/AGENTS.md`**: 包含 19 个章节。
+- **`memory-bank/schema/conflict_policy.md`**: 包含 10 个章节。
+- **`memory-bank/schema/context_safeguard_policy.md`**: 包含 43 个章节。
+- **`memory-bank/schema/conventions.md`**: 包含 43 个章节。
+- **`memory-bank/schema/digest_policy.md`**: 包含 13 个章节。
+- **`memory-bank/schema/goal_policy.md`**: 包含 48 个章节。
+- **`memory-bank/schema/phase_boundary_policy.md`**: 包含 40 个章节。
+- **`memory-bank/schema/taskpack_policy.md`**: 包含 13 个章节。
+- **`memory-bank/schema/watchdog_policy.md`**: 包含 11 个章节。
+- **`memory-bank/system-design-v2-full.md`**: 包含 56 个章节。
+- **`memory-bank/system-design-v2.md`**: 包含 16 个章节。
+- **`memory-bank/tech-stack.md`**: 包含 31 个章节。
+- **`memory-bank/templates/archive-record-template.md`**: 包含 7 个章节。
+- **`memory-bank/templates/comparison-template.md`**: 包含 6 个章节。
+- **`memory-bank/templates/concept-template.md`**: 包含 6 个章节。
+- **`memory-bank/templates/entity-template.md`**: 包含 6 个章节。
+- **`memory-bank/templates/lint-report-template.md`**: 包含 11 个章节。
+- **`memory-bank/templates/report-template.md`**: 包含 10 个章节。
+- **`memory-bank/templates/source-note-template.md`**: 包含 6 个章节。
+- **`memory-bank/templates/taskpack-template.md`**: 包含 10 个章节。
+- **`memory-bank/validation-report.md`**: 包含 11 个章节。
+- **`memory-bank/wiki-layout.md`**: 包含 17 个章节。
+- **`scripts/delta_compile.py`**: 包含 0 个类, 15 个顶层函数。
+- **`scripts/export_memory_repo.py`**: 包含 0 个类, 4 个顶层函数。
+- **`scripts/ingest_raw.py`**: 包含 0 个类, 40 个顶层函数。
+- **`scripts/init_raw_root.py`**: 包含 0 个类, 1 个顶层函数。
+- **`scripts/provenance_check.py`**: 包含 0 个类, 3 个顶层函数。
+- **`scripts/raw_manifest_check.py`**: 包含 0 个类, 1 个顶层函数。
+- **`scripts/stale_report.py`**: 包含 0 个类, 8 个顶层函数。
+- **`scripts/untracked_raw_check.py`**: 包含 0 个类, 2 个顶层函数。
+- **`scripts/version_check.py`**: 包含 0 个类, 4 个顶层函数。
+- **`scripts/wiki_check.py`**: 包含 0 个类, 3 个顶层函数。
 - **`src/core/_keylistener.py`**: 包含 1 个类, 0 个顶层函数。
 - **`src/core/buddy/animator.py`**: 包含 1 个类, 1 个顶层函数。
 - **`src/core/buddy/commands.py`**: 包含 0 个类, 7 个顶层函数。
@@ -37,17 +104,18 @@
 - **`src/core/buddy/storage.py`**: 包含 0 个类, 16 个顶层函数。
 - **`src/core/buddy/types.py`**: 包含 6 个类, 0 个顶层函数。
 - **`src/core/checkpoint.py`**: 包含 2 个类, 1 个顶层函数。
-- **`src/core/commands.py`**: 包含 1 个类, 16 个顶层函数。
+- **`src/core/commands.py`**: 包含 1 个类, 18 个顶层函数。
 - **`src/core/compact.py`**: 包含 1 个类, 9 个顶层函数。
 - **`src/core/config.py`**: 包含 2 个类, 12 个顶层函数。
 - **`src/core/context.py`**: 包含 0 个类, 13 个顶层函数。
-- **`src/core/coordinator.py`**: 包含 0 个类, 9 个顶层函数。
+- **`src/core/coordinator.py`**: 包含 0 个类, 10 个顶层函数。
 - **`src/core/cost_tracker.py`**: 包含 3 个类, 4 个顶层函数。
 - **`src/core/dehydration.py`**: 包含 1 个类, 3 个顶层函数。
 - **`src/core/engine.py`**: 包含 2 个类, 7 个顶层函数。
 - **`src/core/flow_state.py`**: 包含 1 个类, 1 个顶层函数。
-- **`src/core/knowledge/ingester.py`**: 包含 1 个类, 0 个顶层函数。
-- **`src/core/knowledge/watcher.py`**: 包含 1 个类, 1 个顶层函数。
+- **`src/core/knowledge/dehydrator.py`**: 包含 3 个类, 0 个顶层函数。
+- **`src/core/knowledge/ingester.py`**: 包含 3 个类, 0 个顶层函数。
+- **`src/core/knowledge/watcher.py`**: 包含 2 个类, 2 个顶层函数。
 - **`src/core/llm.py`**: 包含 5 个类, 17 个顶层函数。
 - **`src/core/main.py`**: 包含 3 个类, 10 个顶层函数。
 - **`src/core/memory.py`**: 包含 0 个类, 17 个顶层函数。
@@ -75,7 +143,7 @@
 - **`src/core/tools/grep_tool.py`**: 包含 1 个类, 0 个顶层函数。
 - **`src/core/tools/plan_tools.py`**: 包含 2 个类, 0 个顶层函数。
 - **`src/core/worker_manager.py`**: 包含 3 个类, 0 个顶层函数。
-- **`tests/README.md`**: 包含 1 个章节章节。
+- **`tests/README.md`**: 包含 1 个章节。
 - **`tests/conftest.py`**: 包含 11 个类, 1 个顶层函数。
 - **`tests/core/test_checkpoint.py`**: 包含 0 个类, 1 个顶层函数。
 - **`tests/core/test_compact_runtime.py`**: 包含 1 个类, 2 个顶层函数。

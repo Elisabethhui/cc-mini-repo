@@ -1,3 +1,9 @@
+---
+source_hash: 9dcd156b76b79436
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/plan_tools.py
 
 ## Classes

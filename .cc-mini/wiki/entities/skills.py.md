@@ -1,3 +1,9 @@
+---
+source_hash: b107f024882f8149
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/skills.py
 
 ## Classes

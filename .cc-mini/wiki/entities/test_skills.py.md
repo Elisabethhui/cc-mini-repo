@@ -1,3 +1,9 @@
+---
+source_hash: f7e033382d2bb690
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_skills.py
 
 ## Classes

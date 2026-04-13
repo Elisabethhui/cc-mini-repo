@@ -1,3 +1,9 @@
+---
+source_hash: 5a91ad603c3f5e37
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/file_edit_strict.py
 
 ## Classes

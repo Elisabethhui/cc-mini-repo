@@ -1,0 +1,95 @@
+---
+source_hash: d8e95d0a5511dbf9
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
+# 文献大纲: memory-bank/phase-0-4-full-guide.md
+
+- Phase 0–Phase 4 Full Guide
+  - 1. 文档目的
+  - 2. 为什么一定要分阶段
+    - 2.1 因为你面对的不是普通脚手架项目，而是“受限小模型下的协作系统”
+    - 2.2 阶段拆分的本质：先定制度，再定骨架，再定语义，再定任务，再定执行
+  - 3. 当前你的真实位置
+- 4. Phase 0：规则与契约定稿
+  - 4.1 Phase 0 的核心任务是什么
+  - 4.2 为什么 Phase 0 必须单独存在
+  - 4.3 Phase 0 应该包含什么
+    - A. 页面与元数据规则
+    - B. 规则层文件
+    - C. 新增 v2.0 规则文件
+    - D. 阶段边界
+  - 4.4 Phase 0 的典型风险
+    - 风险 1：问题定得太细，提前卷入实现
+    - 风险 2：规则文件之间边界不清
+    - 风险 3：试图在 Phase 0 就写代码
+  - 4.5 Phase 0 完成后的标志
+- 5. Phase 1：模式接入与结构骨架
+  - 5.1 Phase 1 的核心任务是什么
+  - 5.2 为什么 Phase 1 不能直接开始 digest / patch / debug
+  - 5.3 Phase 1 应该做什么
+    - A. 模式接入
+    - B. Wiki 初始化
+    - C. Structural Ingest 骨架
+    - D. Watcher 骨架
+    - E. 最小 Context Safeguard 接入
+    - F. 最小 Goal Anchoring 接入
+  - 5.4 Phase 1 最大的误区
+    - 误区 1：以为“骨架搭起来了”就可以直接 patch
+    - 误区 2：把 ingest 当成 digest
+    - 误区 3：把 token risk 输出当成完整 OOM 防护
+  - 5.5 Phase 1 完成后的标志
+- 6. Phase 2：语义消化与状态升级
+  - 6.1 Phase 2 的核心任务是什么
+  - 6.2 为什么 digest 是单独一个 Phase
+    - 坏结果 1
+    - 坏结果 2
+  - 6.3 Phase 2 应该做什么
+    - A. `/scan`
+    - B. `/digest`
+    - C. `/digest --changed`
+    - D. 页面状态升级
+    - E. 最小 Context Safeguard 闭环
+    - F. 最小 Drift Check
+  - 6.4 为什么这个阶段对 32K 小模型特别重要
+  - 6.5 Phase 2 完成后的标志
+- 7. Phase 3：任务预热与结构化计划
+  - 7.1 Phase 3 的核心任务是什么
+  - 7.2 为什么 TaskPack / EditSpec 一定要放在独立阶段
+  - 7.3 Phase 3 应该做什么
+    - A. TaskPack
+    - B. EditSpec
+    - C. `/prime`
+    - D. `/plan`
+    - E. Goal Stack 正式接入
+    - F. Deferred Issue Log
+    - G. Micro-Fork Note
+  - 7.4 为什么这一步会极大省 token
+  - 7.5 Phase 3 最大的风险
+    - 风险 1：TaskPack 太大
+    - 风险 2：plan 仍然自由散开
+    - 风险 3：EditSpec 只写 file，不写 symbol/span
+  - 7.6 Phase 3 完成后的标志
+- 8. Phase 4：精准修改与局部 debug 闭环
+  - 8.1 Phase 4 的核心任务是什么
+  - 8.2 为什么 patch / debug 必须放在最后
+  - 8.3 Phase 4 应该做什么
+    - A. ASTReadTool
+    - B. strict patch
+    - C. ask_user fallback
+    - D. traceback / stderr 清洗
+    - E. verify / retry loop
+    - F. Re-anchor Loop
+    - G. Context Snapshot + Failure Memory
+  - 8.4 为什么这一步和你最初担心的“路径不存在反复思考”直接相关
+  - 8.5 Phase 4 完成后的标志
+- 9. 为什么 Phase 5 和 Phase 6 现在不急
+- 10. 从“新手实际操作”角度，该怎么理解这五个 Phase
+  - Phase 0
+  - Phase 1
+  - Phase 2
+  - Phase 3
+  - Phase 4
+- 11. 最后总结
+  - 12. 下一份文档应该是什么

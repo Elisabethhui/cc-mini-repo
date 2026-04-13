@@ -1,3 +1,9 @@
+---
+source_hash: b5d2479036fe6374
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/battle.py
 
 ## Classes

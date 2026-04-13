@@ -1,56 +1,11 @@
+---
+source_hash: 9a06ac0dbc387c12
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # 文献大纲: memory-bank/game-design-document.md
 
-- Game Design Document
-  - 1. 项目名称
-  - 2. 一句话核心
-  - 3. 项目背景
-  - 4. 设计目标
-    - 4.1 核心目标
-    - 4.2 成功判定
-  - 5. 非目标（当前阶段明确不做）
-  - 6. 目标用户
-    - 6.1 主要用户
-    - 6.2 典型使用场景
-  - 7. 核心设计原则
-    - 7.1 模式隔离
-    - 7.2 Wiki First
-    - 7.3 结构与语义分层
-    - 7.4 计划、定位、修改、验证分离
-  - 8. 核心工作流
-    - 8.1 统一主流程
-    - 8.2 Review 流程
-    - 8.3 Modify 流程
-    - 8.4 Debug 流程
-  - 9. 系统分层设计
-    - Layer 0：Raw Sources
-    - Layer 1：Structural Ingest
-    - Layer 2：Semantic Digest
-    - Layer 3：Task Priming / Task Pack
-    - Layer 4：Safe Edit / Verify
-    - Layer 5：Compounding LLM Wiki
-  - 10. 页面与状态设计
-    - 10.1 页面状态
-    - 10.2 规则要求
-  - 11. MVP 范围（第一轮必须打通）
-    - 11.1 MVP 八项
-    - 11.2 MVP 达成后的能力
-  - 12. 关键模块范围
-  - 13. 风险与约束
-    - 13.1 核心风险
-    - 13.2 对应约束
-  - 14. 版本推进策略
-    - Phase 0：规则定稿
-    - Phase 1：模式接入与结构测绘
-    - Phase 2：语义消化层
-    - Phase 3：任务级消化与 `/plan` 重构
-    - Phase 4：精准修改与 debug 闭环
-    - Phase 5：Compounding LLM Wiki
-    - Phase 6：Obsidian / Git 运维层
-  - 15. 验收口径
-    - M1：模式与骨架可用
-    - M2：核心模块可 digest
-    - M3：任务级修改可跑通
-    - M4：局部 debug 可跑通
-    - M5：知识复利闭环成立
-  - 16. 本文档在 memory-bank 中的作用
-  - 17. 当前版本结论
+- Game Design Document（兼容命名保留）
+  - 一句话核心
+  - 当前目标

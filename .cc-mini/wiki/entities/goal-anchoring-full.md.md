@@ -1,0 +1,72 @@
+---
+source_hash: ec792d364bd9365c
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
+# 文献大纲: memory-bank/goal-anchoring-full.md
+
+- Goal Anchoring Full
+  - 1. 文档目的
+  - 2. 背景：为什么小模型会偏航
+    - 2.1 偏航不是偶发 bug，而是小模型在长任务中的自然倾向
+    - 2.2 为什么编程任务比普通问答更容易偏航
+    - 2.3 偏航最可怕的地方：它不是立即暴露，而是逐步滑走
+  - 3. 为什么“提醒一下当前任务”还不够
+    - 3.1 因为任务不是单层的
+    - 3.2 因为任务边界不是静态的
+    - 3.3 因为提醒本身不等于控制
+  - 4. Goal Anchoring 的真正定义
+    - 4.1 多层锚点
+    - 4.2 全过程引用
+  - 5. Goal Stack：为什么必须是正式对象
+    - 5.1 Goal Stack 是什么
+    - 5.2 为什么必须有这 6 项
+    - 5.3 为什么 Goal Stack 必须正式化，而不是临时写进 prompt
+  - 6. Drift Detector：什么叫“偏航检测”
+    - 6.1 偏航不是抽象感觉，必须可观测
+    - 6.2 类型一：路径偏航
+    - 6.3 类型二：范围偏航
+    - 6.4 类型三：问题升级偏航
+    - 6.5 类型四：重复失败偏航
+    - 6.6 类型五：上下文偏航
+  - 7. Re-anchor Loop：为什么必须有“回正动作”
+    - 7.1 发现偏航不够，还必须拉回来
+    - 7.2 Re-anchor Loop 的固定问题
+    - 7.3 为什么必须固定格式
+    - 7.4 什么时候触发 Re-anchor Loop
+  - 8. Deferred Issue Log：为什么必须把“后续问题”外部化
+    - 8.1 小模型最大的问题之一：什么都想现在解决
+    - 8.2 Deferred Issue Log 的作用
+    - 8.3 Deferred Issue 的典型内容
+  - 9. Micro-Fork：为什么需要“轻量分叉”，但不能重分叉
+    - 9.1 为什么要借鉴 fork 思想
+    - 9.2 Micro-Fork Note 是什么
+    - 9.3 为什么它适合你这个场景
+  - 10. Goal Anchoring 与 TaskPack 的关系
+    - 10.1 TaskPack 解决“知识压缩”
+    - 10.2 Goal Stack 解决“方向锚定”
+    - 10.3 两者必须并存
+  - 11. Goal Anchoring 与 `/prime`、`/plan` 的关系
+    - 11.1 `/prime`
+    - 11.2 `/plan`
+  - 12. Goal Anchoring 与 patch / debug 的关系
+    - 12.1 patch 场景
+    - 12.2 debug 场景
+  - 13. Goal Anchoring 与 Context Safeguard 的关系
+    - Context Safeguard 解决：
+    - Goal Anchoring 解决：
+  - 14. 新手最容易犯的 5 个误区
+    - 误区 1：把 Goal Anchoring 理解成“写一句任务目标”
+    - 误区 2：觉得有了计划就不会偏航
+    - 误区 3：认为 Deferred Issue 是“可有可无的备注”
+    - 误区 4：觉得模型偏航了，靠人工纠正就行
+    - 误区 5：把 Micro-Fork 做成重上下文并行分支
+  - 15. 最务实的落地顺序
+    - 第一步：最小版 Goal Stack
+    - 第二步：最小 Drift Detector
+    - 第三步：最小 Re-anchor
+    - 第四步：引入 Deferred Issue Log
+    - 第五步：引入 Micro-Fork
+  - 16. 最后总结
+  - 17. 你现在完整的 Human Docs 已经成形了

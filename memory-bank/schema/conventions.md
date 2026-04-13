@@ -135,6 +135,9 @@ list_field:
 - `supersedes`：本页替代了哪些旧页面。
 - `superseded_by`：本页被哪些新页面替代。
 - `related_pages`：相关页面列表。
+- `goal_refs`：关联的 Goal Stack 引用（v2.0 新增）。
+- `snapshot_refs`：关联的 Context Snapshot 引用（v2.0 新增）。
+- `deferred_issue_refs`：关联的 Deferred Issue 引用（v2.0 新增）。
 
 ### D. 任务类字段
 - `task_id`：任务包唯一标识。
@@ -180,6 +183,26 @@ list_field:
 - `low`
 - `medium`
 - `high`
+
+### 5. v2.0 新增字段说明
+
+#### `goal_refs`
+- **用途**：指向当前任务相关的 Goal Stack 页面或标识。
+- **适用页面**：taskpack、进入核心状态机的任务型页面。
+- **格式**：YAML 列表，例如 `["goal-2026-0411-001"]`。
+- **必填性**：当页面与具体执行任务相关时建议填写。
+
+#### `snapshot_refs`
+- **用途**：指向当前任务关联的 Context Snapshot。
+- **适用页面**：taskpack、debug 记录、retry 状态页。
+- **格式**：YAML 列表，例如 `["snap-2026-0411-001"]`。
+- **必填性**：当任务经历过 checkpoint 或 OOM 恢复后建议填写。
+
+#### `deferred_issue_refs`
+- **用途**：指向因阶段边界而被延后处理的问题。
+- **适用页面**：taskpack、plan 记录、任何标记了后续问题的页面。
+- **格式**：YAML 列表，例如 `["issue-2026-0411-001"]`。
+- **必填性**：当页面记录了非当前阶段处理的问题时建议填写。
 
 ## 必填 / 选填规则（Step 3 定稿）
 

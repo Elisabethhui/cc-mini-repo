@@ -1,3 +1,9 @@
+---
+source_hash: d3d5182d2bb3cc58
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/events.py
 
 ## Classes

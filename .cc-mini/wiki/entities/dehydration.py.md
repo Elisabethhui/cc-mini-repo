@@ -1,3 +1,9 @@
+---
+source_hash: 0b5ef8bf91dfd8e1
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/dehydration.py
 
 ## Classes

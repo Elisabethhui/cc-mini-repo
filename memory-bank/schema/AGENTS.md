@@ -1,4 +1,4 @@
-# AGENTS
+## AGENTS
 
 ## 文档目的
 本文件定义 **AI 开发执行者** 在本项目中的统一工作纪律。它约束“开始前必须读什么、每一步怎么做、什么事情绝对不能做”，用于减少多轮开发和多执行者切换时的行为漂移。
@@ -84,3 +84,68 @@
 - 新增/修改了哪些文件
 - 文件职责
 - 为什么需要这些文件
+
+## 执行规则
+1. 一次只执行 `memory-bank/current-task.md` 中定义的一个链式任务。
+2. 链式任务内部允许包含多个顺序子任务。
+3. 每个子任务未通过测试，不得进入下一个子任务。
+4. 任一子任务失败，最多修复 2 轮。
+5. 2 轮后仍失败，停止并输出阻塞报告。
+6. 全部子任务通过后，才允许更新 `progress.md` 和 `architecture.md`。
+7. 成功后停止，不允许自动进入下一个 phase 或下一个任务。
+
+## Python 运行时规则（新增）
+本项目禁止依赖“外层 shell 已激活虚拟环境”的隐式状态。Claude Code 执行 Bash 命令时，必须使用**显式解释器路径**和**显式导入路径**。
+
+### 固定解释器
+统一使用以下 Python 解释器：
+
+`/Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python`
+
+### 固定工作目录
+统一在以下目录执行项目命令：
+
+`/Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo`
+
+### 导入规则
+凡是需要导入 `src/core/...` 下模块的命令，必须显式添加：
+
+`PYTHONPATH=src`
+
+### 禁止
+- 不要使用裸 `python`
+- 不要使用裸 `python3`
+- 不要假设 `source .venv/bin/activate` 的状态会自动继承到后续 Bash 子进程
+- 不要在运行时未验证通过前，继续执行 current-task
+
+### 允许的命令形式
+```bash
+cd /Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo && \
+PYTHONPATH=src /Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python -c "from core.config import RunMode; print('runtime ok')"
+```
+
+### 任务前必须验证
+开始任何 `memory-bank/current-task.md` 前，必须先验证：
+
+```bash
+cd /Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo && \
+PYTHONPATH=src /Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python --version
+```
+
+```bash
+cd /Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo && \
+PYTHONPATH=src /Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python -c "from core.config import RunMode; print('runtime ok')"
+```
+
+若上述验证失败，必须立即停止，并输出：
+1. 失败命令
+2. 错误摘要
+3. 当前缺失条件
+4. 需要人工处理的事项
+
+## 当前项目状态约束（建议保留）
+1. 当前项目已回退到 Step 3 之后的 v2.0 路线。
+2. 旧 Step 4 不再作为后续执行依据。
+3. 当前 Phase 0 已完成，后续从 Phase 1 开始。
+4. 当前采用“**保护现状 + 增量补缺**”策略，不允许按“从零重建”的假设乱改现有代码。
+5. 已完成基线检查后，后续任务应优先补“最小缺口”，而不是重复做全局扫描。

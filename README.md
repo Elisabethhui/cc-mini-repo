@@ -54,20 +54,6 @@ The entire core is `~1000 lines of Python`
 - Python 3.10+ (3.11+ recommended)
 - An API key for [Anthropic](https://console.anthropic.com/) or any OpenAI-compatible provider
 
-unset ANTHROPIC_AUTH_TOKEN
-export ANTHROPIC_MODEL=kimi-for-coding
-export ENABLE_TOOL_SEARCH=false
-export ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-export ANTHROPIC_API_KEY=sk-kimi-CcVKVk6DrY8fIw8e3sNzda6I22M9koqO46E6AwgfKj13u6EYq54ly55fndg6Cr4z  # 这里填在会 员页面生成的 API Key
-claude
-
-
-
-export ENABLE_TOOL_SEARCH=false
-export ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-export ANTHROPIC_API_KEY=sk-kimi-CcVKVk6DrY8fIw8e3sNzda6I22M9koqO46E6AwgfKj13u6EYq54ly55fndg6Cr4z  # 这里填在会员页面生成的 API Key
-
-claude
 ### Install
 
 ```bash
@@ -82,56 +68,12 @@ pip install -e ".[dev]"
 export CC_MINI_MODEL="Qwen3.5-9B-MLX-4bit"                    
 export CC_MINI_PROVIDER=openai
 export OPENAI_BASE_URL=http://localhost:8000/v1
-export OPENAI_API_KEY=w2hqq0809
+export OPENAI_API_KEY=mykey
 export CC_MINI_MAX_TOKENS=32000
 export CC_MINI_AUTO_APPROVE=1
 export CC_MINI_AUTO_COMPACT=1
-
-
 export CC_MINI_MODE=wiki_strict
-claudekimi-key=
-sk-kimi-CcVKVk6DrY8fIw8e3sNzda6I22M9koqO46E6AwgfKj13u6EYq54ly55fndg6Cr4z
 
-export ENABLE_TOOL_SEARCH=false
-unset ANTHROPIC_AUTH_TOKEN
-export ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-export ANTHROPIC_API_KEY=sk-kimi-CcVKVk6DrY8fIw8e3sNzda6I22M9koqO46E6AwgfKj13u6EYq54ly55fndg6Cr4z  
-claude
-unset ANTHROPIC_AUTH_TOKEN
-export ENABLE_TOOL_SEARCH=false
-export ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-export ANTHROPIC_API_KEY=sk-kimi-xxxx
-claude
-
-"env": {
-    "ANTHROPIC_AUTH_TOKEN": "w2hqq0809",
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8000",
-    "ANTHROPIC_MODEL": "Qwen3.5-9B-MLX-4bit",
-    "NO_PROXY": "127.0.0.1,localhost",
-    "no_proxy": "127.0.0.1,localhost"
-  },  这个里面我可以配置token吗？
-
-# ----------------------------
-# Claude Code 模型切换
-# ----------------------------
-# 1. 本地 oMLX
-alias claude-local="
-  unset ANTHROPIC_API_KEY
-  export ANTHROPIC_BASE_URL=http://127.0.0.1:8000
-  export ANTHROPIC_AUTH_TOKEN=w2hqq0809
-  export ANTHROPIC_MODEL=Qwen3.5-9B-MLX-4bit
-  export ENABLE_TOOL_SEARCH=false
-  claude
-"
-
-# 2. 云端 Kimi
-alias claude-kimi="
-  unset ANTHROPIC_AUTH_TOKEN
-  export ANTHROPIC_BASE_URL=https://api.kimi.com/coding/
-  export ANTHROPIC_API_KEY=sk-kimi-CcVKVk6DrY8fIw8e3sNzda6I22M9koqO46E6AwgfKj13u6EYq54ly55fndg6Cr4z
-  export ENABLE_TOOL_SEARCH=false
-  claude
-"
 ### Set API Key
 
 ```bash

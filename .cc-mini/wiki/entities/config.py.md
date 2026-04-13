@@ -1,3 +1,9 @@
+---
+source_hash: 6ab7b5d74b564b36
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/sandbox/config.py
 
 ## Classes

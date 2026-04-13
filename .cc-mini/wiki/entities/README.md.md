@@ -1,3 +1,9 @@
-# 文献大纲: tests/README.md
+---
+source_hash: fc44d5ec88f1a905
+status: partially_digested
+updated_at: 1776054844.6630266
+---
 
-- cc-mini runtime protection test pack
+# 文献大纲: manifests/README.md
+
+- Manifests

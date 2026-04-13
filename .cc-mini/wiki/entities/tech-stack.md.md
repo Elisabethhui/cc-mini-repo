@@ -1,3 +1,9 @@
+---
+source_hash: b65412873c3288da
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # 文献大纲: memory-bank/tech-stack.md
 
 - Tech Stack Recommendation

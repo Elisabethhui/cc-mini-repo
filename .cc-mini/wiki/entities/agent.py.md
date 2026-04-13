@@ -1,3 +1,9 @@
+---
+source_hash: 1bf223c7ea5946a4
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/agent.py
 
 ## Classes

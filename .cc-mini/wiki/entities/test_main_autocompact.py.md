@@ -1,3 +1,9 @@
+---
+source_hash: 8fb035f59715dafc
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/core/test_main_autocompact.py
 
 ## Classes

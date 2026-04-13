@@ -1,3 +1,9 @@
+---
+source_hash: 3a5ae21570c18004
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/animator.py
 
 ## Classes

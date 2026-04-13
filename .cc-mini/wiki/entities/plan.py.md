@@ -1,3 +1,9 @@
+---
+source_hash: 69ebe068d8e35270
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/plan.py
 
 ## Classes

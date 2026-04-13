@@ -1,3 +1,9 @@
+---
+source_hash: 935b8ae04ae4e357
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/token_budget.py
 
 ## Classes

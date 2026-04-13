@@ -1,3 +1,9 @@
+---
+source_hash: d04f04b0289b1819
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/compact.py
 
 ## Classes

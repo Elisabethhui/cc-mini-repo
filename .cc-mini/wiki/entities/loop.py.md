@@ -1,3 +1,9 @@
+---
+source_hash: ca6994f13d4238a6
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/loop.py
 
 ## Classes

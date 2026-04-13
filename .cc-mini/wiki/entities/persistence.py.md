@@ -1,3 +1,9 @@
+---
+source_hash: d0d25ebe97a4d36a
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/buddy/poke_game/persistence.py
 
 ## Classes

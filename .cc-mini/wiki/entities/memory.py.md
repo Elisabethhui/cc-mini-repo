@@ -1,3 +1,9 @@
+---
+source_hash: b2cdfd736a0dbed3
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/memory.py
 
 ## Classes

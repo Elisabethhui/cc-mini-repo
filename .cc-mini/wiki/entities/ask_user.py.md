@@ -1,3 +1,9 @@
+---
+source_hash: 4789891e16e42ea2
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/tools/ask_user.py
 
 ## Classes

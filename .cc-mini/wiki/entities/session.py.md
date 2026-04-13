@@ -1,3 +1,9 @@
+---
+source_hash: 1f7571aa444973b6
+status: partially_digested
+updated_at: 1776054844.6630266
+---
+
 # Entity: src/core/session.py
 
 ## Classes

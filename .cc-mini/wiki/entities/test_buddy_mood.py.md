@@ -1,3 +1,9 @@
+---
+source_hash: 16e894277234886e
+status: raw_ast
+updated_at: 1776054844.6630266
+---
+
 # Entity: tests/test_buddy_mood.py
 
 ## Classes

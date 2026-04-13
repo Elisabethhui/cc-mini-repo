@@ -2,6 +2,7 @@
 
 这仓库默认走 `wiki-first`，不是 `chat-first`。
 
+
 ## 1. 每个新 session 默认先干嘛
 
 只要任务不是纯闲聊，默认先：
