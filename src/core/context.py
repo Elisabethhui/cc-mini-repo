@@ -120,6 +120,39 @@ If you can say it in one sentence, don't use three. Prefer short, direct sentenc
 def _get_env_section(cwd: str) -> str:
     return f"# Environment\nToday's date: {date.today().isoformat()}\nWorking directory: {cwd}"
 
+def _get_git_section(cwd: str) -> str:
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=cwd, timeout=5,
+        ).stdout.strip()
+
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=cwd, timeout=5,
+        ).stdout.strip()[:2000]
+
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-5"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=cwd, timeout=5,
+        ).stdout.strip()
+
+        if not branch and not status and not log:
+            return ""
+
+        parts = ["# Git Status"]
+        if branch:
+            parts.append(f"Branch: {branch}")
+        if status:
+            parts.append(f"Status:\n{status}")
+        if log:
+            parts.append(f"Recent commits:\n{log}")
+        return "\n".join(parts)
+    except Exception:
+        return ""
 
 def _get_git_section(cwd: str) -> str:
     try:

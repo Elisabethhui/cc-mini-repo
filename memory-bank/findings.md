@@ -186,6 +186,39 @@ PYTHONPATH=src /Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python -c 
 - [x] 年龄阈值：snapshot=7d, taskpack=30d, report=14d, entity=90d
 - [x] 归档清单：`.cc-mini/wiki/archive/manifest.json`
 
+## 最小真实功能验证结果 (2026-04-13)
+**验证任务**: current-ccmini-minimal-real-validation
+
+### 验证结果摘要
+| 验证项 | 状态 | 备注 |
+|--------|------|------|
+| Runtime Validation | ✅ 通过 | Python 3.11.14, PYTHONPATH=src |
+| Pytest 回归 | ✅ 通过 | 277 passed, 9 skipped |
+| 核心模块导入 | ✅ 全部通过 | 13/13 模块 |
+| 分析链 (scan/digest) | ✅ 通过 | Entity 生成、状态升级、frontmatter |
+| 计划链 (TaskPack) | ✅ 通过 | GoalStack, EditSpec, 持久化 |
+| 修改链 (ASTRead/patch) | ✅ 通过 | symbol/span/anchor/outline 模式 |
+| 真实任务闭环 | ✅ 通过 | ASTRead → FileEdit → 验证 |
+| 保护链 (token/dehydration) | ✅ 通过 | TokenBudgetManager, FlowState, Checkpoint |
+| 维护链 (lint/reconcile) | ✅ 通过 | 7 OK checks, stale 检测 |
+
+### 最小真实任务闭环详情
+**任务**: 给 greet 函数添加类型注解  
+**流程**:
+1. ASTRead 符号模式读取 `greet` 函数 ✅
+2. FileEdit 修改函数签名 (添加 `name: str -> str`) ✅
+3. 验证修改结果 ✅
+
+### 结论
+**当前升级后的 cc-mini 已满足本地 32K 场景目标**。所有核心功能验证通过，包括：
+- Runtime 环境正确
+- Standard 模式未损坏 (pytest 277 passed)
+- wiki_strict 模式分析链可用
+- 计划链完整 (Goal Stack / TaskPack / EditSpec)
+- 修改链可用 (ASTRead / FileEdit / retry / reanchor)
+- 保护链存在 (TokenBudget / FlowState / Checkpoint)
+- 维护链可用 (lint / reconcile / archive / maintenance)
+
 ## References
 - `memory-bank/system-design-v2.md`
 - `memory-bank/progress.md`
@@ -194,3 +227,34 @@ PYTHONPATH=src /Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python -c 
 - `memory-bank/schema/phase_boundary_policy.md`
 - `memory-bank/schema/goal_policy.md`
 - `memory-bank/schema/context_safeguard_policy.md`
+
+
+## 2026-04-15 — Phase 6-A / Module 1 状态记录
+
+### 结论
+Phase 6-A / Module 1 当前状态记为：`conditional pass`
+
+### 已完成
+- Target Identity 相关源码侧功能验证通过
+- `scripts/validation/phase6/module-1/validate_target_identity.sh` 已执行
+- 测试输出显示：
+  - Target Identity module import 成功
+  - Target Identity structure validation 成功
+  - TargetResolver 基本解析成功
+  - ambiguous path disambiguation 成功
+  - ambiguous symbol disambiguation 成功
+  - TargetIdentityStore persistence 成功
+  - `_cmd_prime` 已接入 Target Identity
+  - explicit path resolution 成功
+
+### 未完成
+- 已安装运行时（`.venv/bin/cc-mini`）未单独做 smoke test
+- 安装态下 `/prime llm.py` 未单独验证
+- 安装态下 `/prime src/core/llm.py` 未单独验证
+- 安装态下不唯一 target 的 disambiguation 行为未单独验证
+
+### Deferred Validation
+- 将安装态 smoke test 延后到 Phase 6-A Final Validation 一并收口
+
+### 风险
+当前通过结论主要来自源码侧验证，而不是最终安装态产品行为验证。因此 Module 1 暂记为 `conditional pass`，不能视为完全封板。

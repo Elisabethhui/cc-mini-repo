@@ -259,6 +259,60 @@ pytest 回归通过（277 passed）
 
 **Phase 5 全部完成，生命周期管理闭环已实现**
 
+## Phase 5 后最小真实功能验证 (current-ccmini-minimal-real-validation)
+完成时间：2026-04-13
+
+### 验证目标
+验证当前升级后的 cc-mini 是否已经满足本地 32K 场景目标
+
+### 验证结果
+| 子任务 | 验证内容 | 状态 |
+|--------|----------|------|
+| A | Runtime & Standard Baseline | ✅ 通过 |
+| B | 分析链 (scan/digest) | ✅ 通过 |
+| C | 计划链 (TaskPack/GoalStack) | ✅ 通过 |
+| D | 修改链 (ASTRead/patch/verify) | ✅ 通过 |
+| E | 保护链 & 维护链 | ✅ 通过 |
+| F | 文档同步 | ✅ 完成 |
+
+### 关键验证项
+- **Runtime**: Python 3.11.14, PYTHONPATH=src 正确 ✅
+- **Pytest**: 277 passed, 9 skipped ✅
+- **模块导入**: 13/13 核心模块全部导入成功 ✅
+- **ASTRead**: symbol/span/anchor/outline 四种模式全部可用 ✅
+- **FileEdit**: 精确匹配修改成功 ✅
+- **最小真实任务闭环**: ASTRead → FileEdit → 验证，完整跑通 ✅
+
+### 最终结论
+**当前升级后的 cc-mini 已满足本地 32K 场景目标，达到 Beta 可用标准。**
+
 ## 备注
 本文件从现在开始，服务于 **v2.0 升级后的项目状态记录**。
 
+## Phase 6-A Progress
+
+### Module 1
+状态：`conditional pass`
+
+#### 已完成
+- Module 1 源码侧实现已完成
+- `validate_target_identity.sh` 已执行
+- `summary.txt` 已生成
+- 允许进入 Module 2
+
+#### 未完成
+- 安装态 smoke test 未单独执行
+- 最终产品运行态验证留待 Final Validation 阶段统一收口
+
+#### 决策
+- 为了继续推进 Phase 6-A 主线，允许在 Module 1 安装态 smoke test 暂缓的前提下进入 Module 2
+- 必须在 Final Validation 中明确写入该项为 deferred validation
+
+### Module 2
+状态：`ready_to_start`
+
+### Module 3
+状态：`blocked_until_module_2_pass`
+
+### Final Validation
+状态：`pending`

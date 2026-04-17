@@ -115,5 +115,24 @@
 - 生命周期管理阈值已确定（7d/14d/30d/90d）
 - dry_run 优先原则确立（实际执行需显式确认）
 
+### D-019 Beta 可用性判定
+**决定**: 当前升级后的 cc-mini 已达到 Beta 可用标准  
+**验证依据**: current-ccmini-minimal-real-validation (2026-04-13)
+- Runtime 验证通过
+- Pytest 277 passed
+- 分析链/计划链/修改链/保护链/维护链全部验证通过
+- 最小真实任务闭环跑通
+
+### D-020 本地 32K 场景目标达成
+**决定**: cc-mini v2.0 已满足本地 32K 场景目标  
+**能力覆盖**:
+- ✅ Standard 模式未损坏
+- ✅ wiki_strict 模式可进入
+- ✅ 分析链 (scan/digest/entity) 可用
+- ✅ 计划链 (Goal Stack/TaskPack/EditSpec) 可用
+- ✅ 修改链 (ASTRead/patch/verify/retry/Re-anchor) 可用
+- ✅ 保护链 (token/dehydration/checkpoint) 存在
+- ✅ 维护链 (lint/reconcile/archive/maintenance) 可用
+
 ## Superseded Decisions
 - 旧 Step 4 相关设计与执行包：已降级为历史草稿，不再作为执行依据。

@@ -1,0 +1,125 @@
+........................................................................ [ 24%]
+.......F.FFF.F.........F................................................ [ 49%]
+....................................sssssssss........................... [ 73%]
+........................................................................ [ 98%]
+....                                                                     [100%]
+=================================== FAILURES ===================================
+_________________ test_load_app_config_reads_anthropic_section _________________
+
+tmp_path = PosixPath('/private/var/folders/y1/lbch9n9j7cz9yvqnln9g3tr80000gn/T/pytest-of-huguoqing/pytest-19/test_load_app_config_reads_ant0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106e36a50>
+
+    def test_load_app_config_reads_anthropic_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        monkeypatch.delenv("CC_MINI_MODEL", raising=False)
+        monkeypatch.delenv("CC_MINI_MAX_TOKENS", raising=False)
+    
+        config_path = tmp_path / "cc-mini.toml"
+        config_path.write_text(
+            '[anthropic]\n'
+            'api_key = "config-key"\n'
+            'base_url = "https://example.test"\n'
+            'model = "claude-3.7-sonnet"\n',
+            encoding="utf-8",
+        )
+    
+        config = load_app_config(_args(config=str(config_path)))
+    
+>       assert config.provider == DEFAULT_PROVIDER
+E       AssertionError: assert 'openai' == 'anthropic'
+E         
+E         - anthropic
+E         + openai
+
+tests/test_config.py:66: AssertionError
+____________ test_load_app_config_uses_defaults_when_nothing_is_set ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106c40050>
+
+    def test_load_app_config_uses_defaults_when_nothing_is_set(monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        monkeypatch.delenv("CC_MINI_MODEL", raising=False)
+        monkeypatch.delenv("CC_MINI_MAX_TOKENS", raising=False)
+    
+        config = load_app_config(_args())
+    
+>       assert config.provider == DEFAULT_PROVIDER
+E       AssertionError: assert 'openai' == 'anthropic'
+E         
+E         - anthropic
+E         + openai
+
+tests/test_config.py:111: AssertionError
+_______________ test_load_app_config_rejects_invalid_max_tokens ________________
+
+tmp_path = PosixPath('/private/var/folders/y1/lbch9n9j7cz9yvqnln9g3tr80000gn/T/pytest-of-huguoqing/pytest-19/test_load_app_config_rejects_i0')
+
+    def test_load_app_config_rejects_invalid_max_tokens(tmp_path: Path):
+        config_path = tmp_path / "cc-mini.toml"
+        config_path.write_text('max_tokens = "abc"\n', encoding="utf-8")
+    
+>       with pytest.raises(ValueError, match="Invalid max_tokens"):
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_config.py:122: Failed
+__________________ test_load_app_config_reads_openai_section ___________________
+
+tmp_path = PosixPath('/private/var/folders/y1/lbch9n9j7cz9yvqnln9g3tr80000gn/T/pytest-of-huguoqing/pytest-19/test_load_app_config_reads_ope0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106cf8d50>
+
+    def test_load_app_config_reads_openai_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("CC_MINI_PROVIDER", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    
+        config_path = tmp_path / "cc-mini.toml"
+        config_path.write_text(
+            'provider = "openai"\n'
+            '[openai]\n'
+            'api_key = "openai-key"\n'
+            'base_url = "https://openai.test"\n'
+            'model = "gpt-4.1-mini"\n'
+            'max_tokens = 4096\n'
+            'effort = "low"\n'
+            'buddy_model = "gpt-4.1-nano"\n',
+            encoding="utf-8",
+        )
+    
+        config = load_app_config(_args(config=str(config_path)))
+    
+        assert config.provider == "openai"
+        assert config.api_key == "openai-key"
+        assert config.base_url == "https://openai.test"
+>       assert config.model == "gpt-4.1-mini"
+E       AssertionError: assert 'Qwen3.5-9B-MLX-4bit' == 'gpt-4.1-mini'
+E         
+E         - gpt-4.1-mini
+E         + Qwen3.5-9B-MLX-4bit
+
+tests/test_config.py:149: AssertionError
+_____________ test_build_system_prompt_contains_base_instructions ______________
+
+    def test_build_system_prompt_contains_base_instructions():
+        prompt = build_system_prompt(cwd="/tmp")
+>       assert "Claude Code" in prompt
+E       assert 'Claude Code' in 'You are an interactive agent that helps users with software engineering tasks. Use the instructions below and the too...e is entirely for Glitch Gloom (or "Glitch" for short) and has nothing for you, just respond with a single period: `.`'
+
+tests/test_context.py:9: AssertionError
+__________ test_coordinator_system_prompt_mentions_task_notifications __________
+
+    def test_coordinator_system_prompt_mentions_task_notifications():
+        prompt = get_coordinator_system_prompt()
+>       assert "task-notification" in prompt
+E       AssertionError: assert 'task-notification' in '\nYou are operating in **WIKI_STRICT Flow-State Mode**.\nDue to context length constraints, you MUST strictly follow ...uirement**: \nAlways prefix your responses with your current state, like `[STATE: PLAN] I will now read the wiki...`\n'
+
+tests/test_coordinator.py:44: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_config.py::test_load_app_config_reads_anthropic_section - A...
+FAILED tests/test_config.py::test_load_app_config_uses_defaults_when_nothing_is_set
+FAILED tests/test_config.py::test_load_app_config_rejects_invalid_max_tokens
+FAILED tests/test_config.py::test_load_app_config_reads_openai_section - Asse...
+FAILED tests/test_context.py::test_build_system_prompt_contains_base_instructions
+FAILED tests/test_coordinator.py::test_coordinator_system_prompt_mentions_task_notifications
+6 failed, 277 passed, 9 skipped in 2.01s

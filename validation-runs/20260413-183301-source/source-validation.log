@@ -1,0 +1,51 @@
+=== Source CC-MINI Validation ===
+Timestamp: 20260413-183301
+Run dir: /Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo/validation-runs/20260413-183301-source
+
+=== Environment Snapshot ===
+PY=/Users/huguoqing/zzzhu/code/exp/RAG/project1/.venv/bin/python
+CC_MINI_AUTO_APPROVE=1
+CC_MINI_AUTO_COMPACT=1
+CC_MINI_MAX_TOKENS=32000
+CC_MINI_MODE=wiki_strict
+CC_MINI_MODEL=Qwen3.5-9B-MLX-4bit
+CC_MINI_PROVIDER=openai
+OPENAI_API_KEY=w2hqq0809
+OPENAI_BASE_URL=http://localhost:8000/v1
+
+=== Runtime Validation ===
+Python 3.11.14
+runtime ok
+
+=== Core Module Imports ===
+config ok
+token_budget ok
+flow_state ok
+coordinator ok
+checkpoint ok
+dehydration ok
+ingester ok
+watcher ok
+reconcile ok
+archive ok
+query_archive ok
+lint ok
+maintenance ok
+
+=== Pytest Regression ===
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting tests/test_context.py ____________________
+ImportError while importing test module '/Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo/tests/test_context.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/homebrew/Caskroom/miniconda/base/envs/tianshou/lib/python3.11/importlib/__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_context.py:3: in <module>
+    from core.context import build_system_prompt, _get_git_status, _find_claude_md
+E   ImportError: cannot import name '_get_git_status' from 'core.context' (/Users/huguoqing/zzzhu/code/exp/RAG/project1/cc-mini-repo/src/core/context.py)
+=========================== short test summary info ============================
+ERROR tests/test_context.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.42s
