@@ -1,414 +1,193 @@
-# cc-mini Architecture
+# Architecture
 
-## System Overview
+**Analysis Date:** 2026-04-18
 
-cc-mini is an AI coding assistant harness implementing core Claude Code features: an interactive REPL, an agentic tool loop, a permission system, session persistence, and a **Wiki-Strict Mode** designed for local 32K token contexts. It has two runtime modes:
+## Pattern Overview
 
-- `standard` (default): Full toolset, multi-agent coordination, standard file read/edit.
-- `wiki_strict`: Structured workflow with AST-based code reading, strict patch verification, automated lifecycle management, and token-budget protection.
+**Overall:** Interactive REPL with an agentic tool-loop, modeled after Claude Code's architecture. Supports two runtime modes: `standard` (default) and `wiki_strict` (structured workflow with AST-based code reading, strict patch verification, and automated lifecycle management for 32K token contexts).
 
-The architecture is layered: CLI/REPL at the top, the Engine as the central streaming loop, Tools as the action layer, and subsystems (Wiki, Knowledge, Sandbox, Buddy, Memory) providing orthogonal services.
+**Key Characteristics:**
+- Streaming API loop with tool-use / tool-result cycles
+- Read-only tools auto-approved; write tools require user confirmation
+- Dual-mode operation: standard vs. wiki_strict with state-machine enforcement
+- Token budget management with dehydration, compaction, and checkpointing
+- Background worker system for coordinator mode
+- Session persistence via JSONL + metadata files
+- Skill system for reusable prompt-based commands
 
----
+## Layers
 
-## Layer Diagram
+**CLI / REPL Layer:**
+- Purpose: User-facing terminal interface, argument parsing, input/output rendering
+- Location: `src/core/main.py`
+- Contains: `main()`, `run_query()`, `_bordered_prompt()`, `_StreamingMarkdown`, `_SpinnerManager`
+- Depends on: Engine, PermissionChecker, SessionStore, CompactService, commands, skills, buddy, sandbox
+- Used by: End user (direct invocation via `cc-mini` entry point)
 
-```
-+-------------------------------------------------------------+
-|  CLI / REPL  (src/core/main.py)                             |
-|  - argparse, prompt_toolkit bordered prompt, slash commands |
-|  - streaming markdown renderer, spinner manager             |
-|  - image attachment parsing (@path), terminal mode (!)      |
-+-------------------------------------------------------------+
-                           |
-                           v
-+-------------------------------------------------------------+
-|  Engine  (src/core/engine.py)                               |
-|  - streaming API loop (LLM -> text / tool_use)              |
-|  - retry logic, abort/cancel, token budget pre-flight       |
-|  - tool execution: sequential write, concurrent read-only   |
-|  - checkpoint on OOM, dehydration, compact integration      |
-+-------------------------------------------------------------+
-                           |
-           +---------------+---------------+
-           |                               |
-           v                               v
-+----------------------------+  +---------------------------+
-|  LLM Client (src/core/llm.py) |  |  Tool System (src/core/tools/) |
-|  - Anthropic + OpenAI       |  |  - base.py: Tool / ToolResult   |
-|  - streaming normalization  |  |  - read: FileRead, ASTRead      |
-|  - content block adapters   |  |  - write: FileEdit, FileEdit_S  |
-|                             |  |  - search: Glob, Grep           |
-|                             |  |  - exec: Bash (sandboxed)       |
-|                             |  |  - coord: Agent, SendMessage    |
-|                             |  |  - plan: EnterPlanMode, Exit    |
-|                             |  |  - interact: AskUserQuestion    |
-+----------------------------+  +---------------------------+
-           |                               |
-           v                               v
-+----------------------------+  +---------------------------+
-|  Config (src/core/config.py)  |  |  Permissions (src/core/permissions.py) |
-|  - CLI args > env > TOML    |  |  - read-only auto-approve     |
-|  - provider/model aliases   |  |  - plan mode restrictions     |
-|  - RunMode enum (standard/  |  |  - sandbox auto-allow         |
-|    wiki_strict)             |  |  - interactive y/n/a prompt   |
-+----------------------------+  +---------------------------+
+**Engine Layer:**
+- Purpose: Core streaming API loop; manages LLM conversation, tool calls, retries, token budgets
+- Location: `src/core/engine.py`
+- Contains: `Engine` class, `AbortedError`
+- Depends on: LLMClient, Tool, PermissionChecker, TokenBudgetManager, CheckpointManager, CompactService
+- Used by: `main.py` (REPL), `worker_manager.py` (background workers)
 
-+-------------------------------------------------------------+
-|  Subsystems (orthogonal services)                           |
-|  - Wiki (src/core/wiki/): taskpack, target_identity,        |
-|    post_edit_guard, archive, reconcile, maintenance, lint   |
-|  - Knowledge (src/core/knowledge/): ingester, watcher,      |
-|    dehydrator                                               |
-|  - Sandbox (src/core/sandbox/): manager, wrapper, checker   |
-|  - Buddy (src/core/buddy/): companion, animator, observer,  |
-|    mood, poke_game                                          |
-|  - Memory (src/core/memory.py): daily logs, dream, index    |
-|  - Session (src/core/session.py): JSONL persistence         |
-|  - Compact (src/core/compact.py): context compression       |
-|  - Skills (src/core/skills.py + skills_bundled.py):         |
-|    SKILL.md discovery and execution                         |
-+-------------------------------------------------------------+
-```
+**LLM Abstraction Layer:**
+- Purpose: Normalize Anthropic and OpenAI SDKs behind a single interface
+- Location: `src/core/llm.py`
+- Contains: `LLMClient`, `_AnthropicStream`, `_OpenAIStream`, content normalization helpers
+- Depends on: `anthropic`, `openai`, `httpx`
+- Used by: `engine.py`, `compact.py`
 
----
+**Tool System Layer:**
+- Purpose: All file, shell, search, and agent tools
+- Location: `src/core/tools/`
+- Contains: `base.py` (abstract `Tool` class), file read/edit/write, Bash, Glob, Grep, AskUser, Agent, ASTRead, plan_tools, error_handler, reanchor
+- Depends on: sandbox (for Bash wrapping)
+- Used by: `engine.py` (registered at startup)
 
-## Data Flow: User Input to Output
+**Configuration Layer:**
+- Purpose: Load settings from CLI args, env vars, and TOML files
+- Location: `src/core/config.py`
+- Contains: `AppConfig`, `load_app_config()`, `RunMode` enum
+- Depends on: `python-dotenv`, `tomllib`
+- Used by: `main.py` (bootstrapping)
 
-```
-User Input
-    |
-    v
-[main.py]  REPL loop
-    - parse_command() -> slash command or free text
-    - _parse_input() -> extract @image attachments
-    |
-    v
-[Engine.submit()]  (engine.py)
-    - append user message to conversation history
-    - pre-flight token budget check (TokenBudgetManager)
-        - if WARNING -> dehydrate old tool_results
-        - if COMPACT -> run CompactService
-        - if CHECKPOINT/HARD_STOP -> write checkpoint, stop
-    |
-    v
-[LLMClient.stream_messages()]  (llm.py)
-    - Anthropic: messages.stream() -> text_stream
-    - OpenAI: chat.completions.create(stream=True) -> chunk iter
-    - normalized to common content blocks: text, tool_use, tool_result
-    |
-    v
-[Engine loop]  process streamed response
-    - text chunks -> yield ("text", chunk) to REPL
-    - tool_use blocks -> collect, batch by read-only vs write
-    |
-    v
-[PermissionChecker.check()]  (permissions.py)
-    - read-only -> auto-allow
-    - write -> prompt user (y/n/a) or auto-approve
-    - plan mode -> restrict to read-only + plan file writes
-    |
-    v
-[Tool.execute()]  (tools/*.py)
-    - read-only tools: execute in ThreadPoolExecutor (parallel)
-    - write tools: execute sequentially
-    - BashTool: optionally wrap with bwrap sandbox
-    |
-    v
-[Engine]  append tool_results as user message
-    - post-tool token budget check
-    - loop back to LLM call (multi-turn tool loop)
-    |
-    v
-[main.py run_query()]  render output
-    - _StreamingMarkdown: incremental Rich Markdown rendering
-    - _SpinnerManager: contextual spinners (Thinking, Running X...)
-    - tool call / result indicators with checkmarks
-```
+**Context / Prompt Layer:**
+- Purpose: Build the system prompt from static and dynamic sections
+- Location: `src/core/context.py`
+- Contains: `build_system_prompt()`, section builders (intro, system, tasks, actions, tools, tone, git, env)
+- Depends on: `memory.py`, `buddy.prompt`
+- Used by: `main.py` (engine initialization)
 
----
+**Session Persistence Layer:**
+- Purpose: Save/restore conversation history
+- Location: `src/core/session.py`
+- Contains: `SessionStore`, `SessionMeta`
+- Depends on: standard library only
+- Used by: `main.py`, `commands.py`
 
-## Component Boundaries and Interactions
+**Sandbox Layer:**
+- Purpose: Bubblewrap-based command isolation
+- Location: `src/core/sandbox/`
+- Contains: `manager.py`, `config.py`, `checker.py`, `wrapper.py`, `command_matcher.py`
+- Depends on: `bwrap` system binary
+- Used by: `main.py`, `tools/bash.py`
 
-### 1. Engine (src/core/engine.py) — Central Orchestrator
+**Wiki-Strict Subsystem:**
+- Purpose: Structured workflow for 32K token contexts
+- Location: `src/core/wiki/`
+- Contains: `taskpack.py`, `reconcile.py`, `archive.py`, `query_archive.py`, `lint.py`, `maintenance.py`, `post_edit_guard.py`, `target_identity.py`
+- Depends on: knowledge ingester
+- Used by: `commands.py` (slash commands `/prime`, `/plan`, `/scan`, `/digest`, `/post_edit`)
 
-**Responsibilities:**
-- Manage conversation message history (`self._messages`)
-- Stream API calls with retry/backoff (`_MAX_RETRIES = 3`)
-- Dispatch tool calls, batching concurrent read-only operations
-- Token budget pre-flight and post-flight protection
-- Checkpoint writing on context overflow
-- Track written artifacts for checkpoint reporting
+**Knowledge System Layer:**
+- Purpose: Ingest raw documents into wiki format, watch for changes, dehydrate messages
+- Location: `src/core/knowledge/`
+- Contains: `ingester.py`, `watcher.py`, `dehydrator.py`
+- Depends on: AST parsing (`ast` module)
+- Used by: `main.py` (wiki_strict startup), `commands.py`
 
-**Key interactions:**
-- Uses `LLMClient` for all API communication
-- Uses `PermissionChecker` before executing write tools
-- Uses `TokenBudgetManager` + `CheckpointManager` for OOM protection
-- Uses `CompactService` for automatic context compression
-- Uses `SessionStore` for message persistence
-- Uses `CostTracker` for usage tracking
+**Companion (Buddy) Layer:**
+- Purpose: Optional companion pet with mood, idle animation, and a roguelike minigame
+- Location: `src/core/buddy/`
+- Contains: `companion.py`, `animator.py`, `mood.py`, `observer.py`, `storage.py`, `render.py`, `sprites.py`, `poke_game/`
+- Depends on: rich console
+- Used by: `main.py` (toolbar integration), `commands.py` (`/buddy` command)
 
-**Public API:**
-```python
-class Engine:
-    def submit(self, user_input: str | list) -> Iterator[tuple]
-    def abort(self) -> None
-    def cancel_turn(self) -> None
-    def set_messages(self, messages: list[dict]) -> None
-    def set_model(self, model: str) -> None
-```
+## Data Flow
 
-### 2. LLM Client (src/core/llm.py) — Provider Abstraction
+**Standard Query Flow:**
 
-**Responsibilities:**
-- Abstract Anthropic and OpenAI SDKs behind a unified interface
-- Normalize content blocks between SDK formats
-- Handle streaming (`stream_messages`) and non-streaming (`create_message`)
-- Classify errors: authentication, retryable, API errors
+1. User input enters `main.py` via `_bordered_prompt()`
+2. `run_query()` initializes `EscListener` and `_SpinnerManager`
+3. `engine.submit()` appends user message and enters the API loop
+4. `LLMClient.stream_messages()` streams text chunks back
+5. On `tool_use` blocks, `engine` batches read-only tools for parallel execution via `ThreadPoolExecutor`
+6. Write tools (Edit, Write, Bash) execute sequentially with permission checks
+7. Tool results are appended as user messages; loop continues until no more tool calls
+8. `engine` persists each message to `SessionStore`
 
-**Key classes:**
-- `LLMClient`: main entry point, provider-aware
-- `_AnthropicStream` / `_OpenAIStream`: streaming context managers
-- `LLMMessage` / `LLMUsage`: normalized dataclasses
+**Token Budget Protection Flow:**
 
-**Normalization:**
-- Anthropic blocks: `text`, `tool_use`, `tool_result`, `image`
-- OpenAI blocks: converted to same schema via `_normalize_openai_message`
+1. Pre-flight: `TokenBudgetManager.estimate_from_messages()` estimates tokens
+2. If over soft limit: `maybe_dehydrate_messages()` replaces old tool results with summaries
+3. If over compact limit: `CompactService.compact()` summarizes old messages
+4. If over checkpoint limit: `CheckpointManager.write_checkpoint()` saves state and halts
+5. Post-flight: usage from API response triggers another budget check
 
-### 3. Tool System (src/core/tools/)
+**Wiki-Strict Flow:**
 
-All tools inherit from `Tool` base class (`base.py`) and implement:
-- `to_api_schema()` -> JSON schema for LLM
-- `execute(**kwargs)` -> `ToolResult(content, is_error)`
-- `is_read_only()` -> bool (affects permission and concurrency)
+1. `main.py` detects `RunMode.WIKI_STRICT` on startup
+2. `WikiIngester.ingest_all()` scans workspace and builds AST-based wiki entities
+3. `start_wiki_watcher()` mounts a filesystem watcher thread
+4. Commands like `/prime` use `TargetResolver` and `TaskPackManager` to generate structured task packs
+5. `/plan` generates `EditSpec` objects with deferred-issue tracking
+6. Post-edit `/post_edit` runs `PostEditGuard` to analyze impact and verify completion
 
-**Read-only tools** (auto-approved, parallel execution):
-| Tool | File | Purpose |
-|------|------|---------|
-| Read | `file_read.py` | Read file with line numbers, offset/limit |
-| ASTRead | `ast_read.py` | Read by symbol/span/anchor (Python AST) |
-| Glob | `glob_tool.py` | File pattern matching |
-| Grep | `grep_tool.py` | Content search with regex |
-| AskUserQuestion | `ask_user.py` | Interactive multi-choice questions |
+**Coordinator Mode Flow:**
 
-**Write tools** (require permission, sequential execution):
-| Tool | File | Purpose |
-|------|------|---------|
-| Edit | `file_edit.py` | Exact string replacement |
-| Edit (strict) | `file_edit_strict.py` | Wiki-strict mode with backup, preview, rollback, human fallback on 2 failures |
-| Write | `file_write.py` | Create/overwrite files |
-| Bash | `bash.py` | Shell execution with optional sandbox |
+1. `--coordinator` flag or env var enables coordinator mode
+2. `WorkerManager` spawns background `Engine` instances in daemon threads
+3. Workers execute prompts autonomously and enqueue XML notifications
+4. `main.py` drains notifications between REPL turns
 
-**Coordination tools:**
-| Tool | File | Purpose |
-|------|------|---------|
-| Agent | `agent.py` | Spawn background worker |
-| SendMessage | `agent.py` | Continue existing worker |
-| TaskStop | `agent.py` | Stop running worker |
-| EnterPlanMode | `plan_tools.py` | Switch to plan mode |
-| ExitPlanMode | `plan_tools.py` | Exit plan mode |
+## Key Abstractions
 
-### 4. Permission System (src/core/permissions.py)
+**Tool:**
+- Purpose: Uniform interface for all LLM-callable operations
+- Examples: `src/core/tools/base.py`, `src/core/tools/file_read.py`, `src/core/tools/bash.py`
+- Pattern: Abstract base class with `name`, `description`, `input_schema`, `execute()`, `is_read_only()`
 
-`PermissionChecker` implements three-tier approval:
-1. **Auto-allow**: read-only tools, `--auto-approve` flag, sandboxed bash in auto-allow mode
-2. **Always-allow**: user pressed 'a' for a specific tool name (stored in `_always_allow`)
-3. **Interactive prompt**: single-character y/n/a response, with ESC cancellation support
+**Engine:**
+- Purpose: Encapsulates the full conversation state and API loop
+- Examples: `src/core/engine.py`
+- Pattern: Stateful class holding messages, tools, system prompt, and budget/checkpoint managers
 
-Plan mode adds additional restrictions: only read tools + plan file writes allowed.
+**LLMClient:**
+- Purpose: Provider-agnostic API client
+- Examples: `src/core/llm.py`
+- Pattern: Normalizes Anthropic and OpenAI streaming into a common iterator interface
 
-### 5. Sandbox (src/core/sandbox/)
+**CommandContext:**
+- Purpose: Bundle of dependencies passed to every slash command handler
+- Examples: `src/core/commands.py`
+- Pattern: `@dataclass` containing engine, session store, compact service, console, config, etc.
 
-Bubblewrap-based sandbox subsystem:
-- `config.py`: `SandboxConfig` dataclass, TOML load/save
-- `manager.py`: `SandboxManager` — unified interface, mode switching
-- `wrapper.py`: `build_bwrap_args()` — generates bwrap command lines
-- `checker.py`: `check_dependencies()` — Linux/bwrap/userns validation
-- `command_matcher.py`: Excluded command pattern matching (prefix/exact/wildcard)
+## Entry Points
 
-Sandbox modes: `auto-allow` (bash auto-approved), `regular` (still prompts), `disabled`.
+**CLI Entry Point:**
+- Location: `src/core/main.py:main()`
+- Triggers: `cc-mini` console script (defined in `pyproject.toml`)
+- Responsibilities: Parse args, load config, initialize sandbox/memory/skills, build engine, start REPL
 
-### 6. Wiki-Strict Subsystem (src/core/wiki/)
+**One-Shot Mode:**
+- Location: `src/core/main.py:main()` (when `--print` or `args.prompt` is provided)
+- Triggers: `cc-mini "prompt"` or piped input
+- Responsibilities: Run single turn, print response, exit
 
-Activated when `CC_MINI_MODE=wiki_strict`:
+**Wiki-Strict Startup:**
+- Location: `src/core/main.py:main()` (block near line 1044)
+- Triggers: `CC_MINI_MODE=wiki_strict` or `--mode wiki_strict`
+- Responsibilities: Ingest workspace, start file watcher, inject wiki-strict tools (ASTRead, FileEditStrict)
 
-| Module | File | Purpose |
-|--------|------|---------|
-| TaskPack | `taskpack.py` | Structured task planning with GoalStack, EditSpec, entity status |
-| Target Identity | `target_identity.py` | Disambiguate file/symbol targets for `/prime` |
-| Post-Edit Guard | `post_edit_guard.py` | Patch impact analysis, completion state machine |
-| Archive | `archive.py` | Automatic archiving with age thresholds |
-| Reconcile | `reconcile.py` | Detect and recover stale wiki entities |
-| Maintenance | `maintenance.py` | Lifecycle management of snapshots/taskpacks |
-| Lint | `lint.py` | Health checks for wiki structure |
-| Query Archive | `query_archive.py` | Query archived items |
+## Error Handling
 
-**Flow-State Machine** (`flow_state.py`):
-```
-PLAN -> LOCATE -> IMPLEMENT -> VERIFY
-```
-- PLAN: Read wiki index for architecture overview
-- LOCATE: Use ASTRead for precise symbol extraction
-- IMPLEMENT: Use strict Edit with exact matching
-- VERIFY: Run tests/lint, loop back to LOCATE on failure
+**Strategy:** Layered: retryable API errors are retried with exponential backoff; non-retryable API errors pop the user message and yield an error event; tool execution errors return `ToolResult(is_error=True)`; aborts raise `AbortedError` which cancels the turn.
 
-### 7. Knowledge System (src/core/knowledge/)
+**Patterns:**
+- API retries: `_MAX_RETRIES = 3` with `_RETRY_BACKOFF = (1, 3, 10)` in `engine.py`
+- Tool errors: wrapped in `ToolResult` with `is_error=True`, displayed in red by the REPL
+- Budget overflow: checkpoint saved and loop terminated gracefully
+- Sandbox dependency errors: checked at startup; sandbox falls back to disabled if deps missing
 
-- `ingester.py`: `WikiIngester` — scan workspace, parse Python AST, generate entity markdown files with frontmatter status tracking
-- `watcher.py`: `start_wiki_watcher()` — filesystem watcher for incremental re-ingestion
-- `dehydrator.py`: `MinimalDehydrator` — message dehydration for context compression
+## Cross-Cutting Concerns
 
-Entity status lifecycle: `raw_ast` -> `partially_digested` -> `digested` | `stale`
+**Logging:** Console output via `rich.console.Console`. No structured logging framework.
 
-### 8. Companion / Buddy (src/core/buddy/)
+**Validation:** Input validation in `config.py` (model names, token counts, effort levels). Tool input schemas validated by the LLM API.
 
-Deterministic companion pet system:
-- `companion.py`: `get_companion()` — deterministic generation from user ID hash
-- `animator.py`: `CompanionAnimator` — 500ms tick loop, idle/excited animations, speech bubbles
-- `observer.py`: `fire_companion_observer()` — background thread generating reactions via LLM
-- `mood.py`: Rule-based mood engine (6 dimensions, event classification, time decay)
-- `storage.py`: JSON persistence for companion data
-- `sprites.py`: ASCII sprite rendering
-- `poke_game/`: Idle Adventure roguelike mini-game
-
-### 9. Memory System (src/core/memory.py)
-
-KAIROS cross-session memory:
-- Daily log appending (`append_to_daily_log`)
-- `<memory>` tag extraction from assistant responses
-- Dream consolidation (`build_dream_prompt`): 4-phase process to consolidate logs into topic files
-- `MEMORY.md` index maintenance
-- Lock-based auto-dream gating
-
-### 10. Session Persistence (src/core/session.py)
-
-JSONL-based conversation storage:
-- `SessionStore.append_message()` — append to `{session_id}.jsonl`
-- `SessionStore.list_sessions()` — fast listing via `.meta.json` files
-- `SessionStore.load_session()` — restore metadata + messages
-- Storage: `~/.mini-claude/sessions/{sanitized_cwd}/`
-
-### 11. Context Compression (src/core/compact.py)
-
-`CompactService` summarizes old messages to free token budget:
-- Splits messages into (history, recent) preserving tool_use/tool_result pairs
-- Calls LLM with structured summarization prompt
-- Replaces history with `[summary]` + `[ack]` messages
-- Auto-triggered when `should_compact()` returns True
-
-### 12. Skills System (src/core/skills.py + skills_bundled.py)
-
-SKILL.md-based reusable prompts:
-- Discovery: `~/.cc-mini/skills/` (user) + `{cwd}/.cc-mini/skills/` (project)
-- Frontmatter parsing (minimal YAML, no PyYAML dependency)
-- Execution modes: `inline` (inject into conversation) or `fork` (isolated turn)
-- Bundled skills registered in code via `register_skill()`
-
-### 13. Coordinator / Workers (src/core/coordinator.py + worker_manager.py)
-
-Multi-agent coordination mode (`--coordinator` or `CC_MINI_COORDINATOR=1`):
-- `WorkerManager`: spawns background threads running isolated `Engine` instances
-- `AgentTool` / `SendMessageTool` / `TaskStopTool`: worker lifecycle tools
-- Notifications delivered as `<task-notification>` XML user messages
-- Coordinator prompt: research -> synthesis -> implementation -> verification workflow
+**Authentication:** API keys loaded from env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) or TOML config. No custom auth system.
 
 ---
 
-## Entry Points and Initialization
-
-### Main Entry Point
-
-**File:** `src/core/main.py` (1393 lines)
-
-```python
-def main() -> None:
-    # 1. Parse CLI arguments
-    parser = argparse.ArgumentParser(prog="cc-mini")
-    parser.add_argument("prompt", nargs="?")
-    parser.add_argument("-p", "--print", action="store_true")
-    parser.add_argument("--auto-approve", action="store_true")
-    parser.add_argument("--provider", choices=("anthropic", "openai"))
-    parser.add_argument("--model")
-    parser.add_argument("--mode", choices=["standard", "wiki_strict"], default="standard")
-    parser.add_argument("--coordinator", action="store_true")
-    # ... more args
-    args = parser.parse_args()
-
-    # 2. Load configuration (CLI > env > TOML)
-    app_config = load_app_config(args)
-
-    # 3. Initialize sandbox
-    sandbox_config = load_sandbox_config(app_config.config_paths)
-    sandbox_mgr = SandboxManager(config=sandbox_config)
-
-    # 4. Memory setup
-    memory_dir = app_config.memory_dir
-    ensure_memory_dir(memory_dir)
-
-    # 5. Skill registration
-    register_bundled_skills()
-    discover_skills(cwd)
-
-    # 6. Build tools (mode-dependent)
-    base_tools = _build_base_tools()  # standard vs wiki_strict
-    tools = _build_tools_for_mode(coordinator_enabled)
-
-    # 7. Build system prompt
-    system_prompt = _build_system_prompt_for_mode(coordinator_enabled)
-
-    # 8. Create engine
-    engine = Engine(
-        tools=tools,
-        system_prompt=system_prompt,
-        permission_checker=permissions,
-        provider=app_config.provider,
-        model=app_config.model,
-        # ...
-    )
-
-    # 9. Wiki-strict mode: ingest workspace, start watcher
-    if run_mode == RunMode.WIKI_STRICT:
-        ingester = WikiIngester(cwd)
-        ingester.ingest_all()
-        watcher_thread = start_wiki_watcher(cwd, ingester)
-
-    # 10. REPL loop
-    while True:
-        user_input = _bordered_prompt(...)
-        # handle slash commands, terminal mode, companion, etc.
-        run_query(engine, user_input, print_mode=False, permissions=permissions)
-```
-
-### Non-Interactive Mode
-
-```bash
-# One-shot prompt
-cc-mini "what tests exist?"
-
-# Piped input
-cat file.txt | cc-mini --print
-```
-
-In non-interactive mode, `run_query()` runs once and exits. Background workers may still be running.
-
-### Session Resume
-
-```bash
-cc-mini --resume 1        # by index
-cc-mini --resume abc123   # by session ID prefix
-```
-
-Loads messages from `~/.mini-claude/sessions/{cwd}/{session_id}.jsonl`.
-
----
-
-## Key Design Patterns
-
-1. **Streaming Yield Pattern**: Engine.submit() yields typed tuples (`("text", ...)`, `("tool_call", ...)`, `("tool_result", ...)`) consumed by the REPL renderer
-2. **Tool Base Class**: Abstract base with `to_api_schema()`, `execute()`, `is_read_only()`
-3. **Normalized Content Blocks**: LLM client normalizes Anthropic/OpenAI formats to common dict schema
-4. **Mode-Conditional Tool Construction**: `main.py` builds different tool sets for standard vs wiki_strict vs coordinator modes
-5. **Checkpoint + Resume**: Token budget manager triggers checkpoint writes; `/resume-from-checkpoint` skill restores state
-6. **Background Worker Threads**: `WorkerManager` runs isolated Engine instances in daemon threads
-7. **Deterministic Companion Generation**: Companion bones regenerated from hash(userId) — no mutable state in bones
-8. **Append-Only Memory**: Daily logs never deleted; dream consolidation produces topic files
+*Architecture analysis: 2026-04-18*

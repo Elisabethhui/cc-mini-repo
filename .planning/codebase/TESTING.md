@@ -1,378 +1,212 @@
-# Testing Conventions — cc-mini
+# Testing Patterns
 
-This document describes the test framework, organization, mocking patterns, and coverage approach used in the cc-mini project.
+**Analysis Date:** 2026-04-18
 
----
+## Test Framework
 
-## 1. Test Framework
-
-### 1.1 pytest
-
-- **Framework:** pytest (>= 8.0)
-- **Async support:** pytest-asyncio (>= 0.23) is listed in dev dependencies but rarely used; the codebase prefers synchronous tests with threading.
-- **Configuration:** `pyproject.toml`
-
-```toml
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-```
-
-### 1.2 Running Tests
-
-```bash
-# All tests
-pytest tests/ -v
-
-# Skip integration tests (sandbox/bwrap)
-pytest tests/ -v -k "not integration"
-
-# Specific file
-pytest tests/test_engine.py -v
-
-# Specific test
-pytest tests/test_engine.py::test_name -v
-```
-
-### 1.3 Test Discovery
-
-- Test files follow the `test_*.py` pattern.
-- Test functions use `test_` prefix.
-- Test classes use `Test` prefix (e.g., `TestParseFrontmatter`, `TestRegistry`).
-
----
-
-## 2. Test Organization
-
-### 2.1 Directory Structure
-
-```
-tests/
-  __init__.py              # Empty marker
-  conftest.py              # Shared fixtures and dummy classes
-  test_engine.py           # Engine streaming loop
-  test_llm.py              # LLM message normalization
-  test_config.py           # Config loading and resolution
-  test_tools.py            # Tool execution (Read, Edit, Bash, Glob, Grep)
-  test_permissions.py      # Permission checker logic
-  test_context.py          # System prompt construction
-  test_skills.py           # Skill registry and bundled skills
-  test_cost_tracker.py     # Cost calculation and formatting
-  test_main.py             # CLI entry point and REPL events
-  test_coordinator.py      # Coordinator mode and session matching
-  test_worker_manager.py   # Background worker threads
-  test_session_mode.py     # Session mode switching
-  test_sandbox_manager.py  # Sandbox configuration
-  test_sandbox_wrapper.py  # bwrap command building
-  test_sandbox_checker.py  # Dependency checking
-  test_sandbox_command_matcher.py  # Command allowlisting
-  test_sandbox_config.py   # Config parsing
-  test_sandbox_integration.py      # Integration tests requiring bwrap
-  test_ask_user.py         # AskUserQuestion tool
-  test_buddy_*.py          # Companion system tests
-  core/                    # Core subsystem tests
-    test_checkpoint.py
-    test_compact_runtime.py
-    test_dehydration.py
-    test_engine_runtime_budget.py
-    test_main_autocompact.py
-    test_token_budget.py
-    test_worker_manager_checkpoint.py
-```
-
-### 2.2 Test Classification
-
-| Category | Files | Characteristics |
-|----------|-------|-----------------|
-| **Unit tests** | `test_*.py` (most) | Fast, no external dependencies, mocked I/O |
-| **Integration tests** | `test_sandbox_integration.py` | Require `bwrap` binary; skipped via `pytestmark` |
-| **Runtime tests** | `core/test_*_runtime*.py` | Test engine behavior with dummy clients and budget managers |
-| **Tool tests** | `test_tools.py` | Exercise actual tool implementations on temp files |
-
----
-
-## 3. Fixtures
-
-### 3.1 Shared Fixtures (`tests/conftest.py`)
-
-`conftest.py` defines a suite of dummy classes used across multiple test files. These are plain Python classes, not pytest fixtures (except `tmp_repo`):
-
-| Class | Purpose |
-|-------|---------|
-| `DummyUsage` | Mock API usage object with token counts |
-| `DummyTextBlock` | Mock text content block |
-| `DummyToolUseBlock` | Mock tool_use content block |
-| `DummyFinalMessage` | Mock final message with content + usage |
-| `DummyStream` | Mock streaming context manager with `text_stream` iterator |
-| `DummyClient` | Mock `LLMClient` with configurable stream queue |
-| `DummyPermissionChecker` | Always-allow or configurable permission checker |
-| `DummyReadOnlyTool` / `DummyWriteTool` | Minimal tool implementations for engine tests |
-| `DummySessionStore` | In-memory message store |
-| `DummyCostTracker` | In-memory usage tracker |
-
-```python
-@pytest.fixture
-def tmp_repo(tmp_path):
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    notes = repo / "code-reading-notes"
-    notes.mkdir()
-    (notes / "manifest.json").write_text("{}", encoding="utf-8")
-    return repo
-```
-
-### 3.2 Local Fixtures
-
-Individual test files define their own fixtures for file system setup:
-
-```python
-@pytest.fixture
-def tmp_file(tmp_path):
-    f = tmp_path / "sample.txt"
-    f.write_text("line one\nline two\nline three\n")
-    return str(f)
-```
-
-### 3.3 Autouse Fixtures
-
-The skill test file uses an `autouse` fixture to clear the global registry:
-
-```python
-@pytest.fixture(autouse=True)
-def _clean_registry():
-    clear_skills()
-    yield
-    clear_skills()
-```
-
----
-
-## 4. Mocking Patterns
-
-### 4.1 unittest.mock
-
-`unittest.mock` (MagicMock, patch, PropertyMock) is the primary mocking library.
-
-#### Patching Object Methods
-
-```python
-def test_engine_returns_text_events():
-    engine = _make_engine()
-    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
-        events = list(engine.submit("hi"))
-    ...
-```
-
-#### Patching Module-Level Functions
-
-```python
-def test_build_system_prompt_includes_git_status_when_available():
-    fake_result = MagicMock()
-    fake_result.stdout = "main"
-    with patch("core.context.subprocess.run", return_value=fake_result):
-        prompt = build_system_prompt(cwd="/tmp")
-    ...
-```
-
-#### Patching with side_effect
-
-```python
-with patch.object(engine._client, "stream_messages", side_effect=streams):
-    events = list(engine.submit("use the echo tool"))
-```
-
-#### Patching Class Constructors
-
-```python
-@patch("core.main.EscListener", _FakeEscListener)
-def test_run_query_prints_text(capsys):
-    ...
-```
-
-### 4.2 pytest.MonkeyPatch
-
-`monkeypatch` is used for environment variable and function replacement:
-
-```python
-def test_load_app_config_reads_anthropic_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "env-key")
-    ...
-```
-
-```python
-def test_enabled_with_deps_ok(self, monkeypatch):
-    monkeypatch.setattr(
-        "core.sandbox.manager.check_dependencies",
-        lambda: DependencyCheck(),
-    )
-    ...
-```
-
-### 4.3 Fake/Dummy Implementations
-
-Rather than deep mocking, tests often create lightweight fake implementations:
-
-```python
-class _FakeEngine:
-    def __init__(self, mode: str):
-        self.mode = mode
-        self.aborted = False
-        self.prompts: list[str] = []
-
-    def submit(self, prompt: str):
-        self.prompts.append(prompt)
-        if self.mode == "complete":
-            yield ("text", f"finished:{prompt}")
-            return
-        ...
-
-    def abort(self) -> None:
-        self.aborted = True
-```
-
-```python
-class _FakeEscListener:
-    pressed = False
-    def __init__(self, **kwargs): pass
-    def __enter__(self): return self
-    def __exit__(self, *_): pass
-    def pause(self): pass
-    def resume(self): pass
-```
-
-### 4.4 Temporary Files and Directories
-
-`tmp_path` (pytest built-in) and `tmp_path_factory` are used for all file system tests:
-
-```python
-def test_file_edit_replaces_unique_string(tmp_path):
-    f = tmp_path / "code.py"
-    f.write_text("def hello():\n    pass\n")
-    result = FileEditTool().execute(file_path=str(f), old_string="    pass", new_string='    return "hi"')
-    assert not result.is_error
-    assert 'return "hi"' in f.read_text()
-```
-
----
-
-## 5. Test Patterns by Subsystem
-
-### 5.1 Engine Tests (`tests/test_engine.py`)
-
-- Mock the `LLMClient.stream_messages` method to return fake streams.
-- Verify event tuples: `("text", ...)`, `("tool_call", ...)`, `("tool_result", ...)`.
-- Test tool execution loop, permission denial, unknown tools, and message normalization.
-- Use `MagicMock` to simulate Anthropic SDK content blocks.
-
-### 5.2 Tool Tests (`tests/test_tools.py`)
-
-- Exercise real tool implementations against temporary files.
-- Assert on `ToolResult.is_error` and `ToolResult.content`.
-- Test edge cases: missing files, duplicate strings, timeouts, empty directories.
-
-### 5.3 Config Tests (`tests/test_config.py`)
-
-- Use `Namespace` to simulate CLI args.
-- Use `monkeypatch` to control environment variables.
-- Test priority: CLI > env > TOML file > defaults.
-- Test validation: invalid `max_tokens`, invalid `effort` values.
-
-### 5.4 LLM Tests (`tests/test_llm.py`)
-
-- Test private normalization functions directly: `_to_openai_messages`, `_tool_schema_to_openai`.
-- Verify round-trip conversion of tool_use / tool_result blocks between Anthropic and OpenAI formats.
-- Test image input normalization.
-
-### 5.5 Sandbox Tests
-
-- **Unit tests** (`test_sandbox_manager.py`, `test_sandbox_wrapper.py`): Mock dependency checks and test configuration logic.
-- **Integration tests** (`test_sandbox_integration.py`): Use `pytestmark` to skip when `bwrap` is unavailable:
-  ```python
-  pytestmark = pytest.mark.skipif(
-      not shutil.which("bwrap"),
-      reason="bwrap not available",
-  )
+**Runner:**
+- pytest >= 8.0
+- Config: `pyproject.toml` under `[tool.pytest.ini_options]`
+  ```toml
+  testpaths = ["tests"]
+  pythonpath = ["src"]
   ```
 
-### 5.6 Skill Tests (`tests/test_skills.py`)
+**Assertion Library:**
+- Built-in `assert` (pytest style)
+- No `unittest.TestCase` subclasses observed in the main test suite
 
-- Organized into nested test classes by concern: `TestParseFrontmatter`, `TestSkill`, `TestRegistry`, `TestBundledSkills`, `TestLoadFromDisk`, `TestDiscoverSkills`, `TestPromptSection`, `TestAutocomplete`, `TestCommandParsing`.
-- Use `autouse` fixture to isolate the global skill registry.
+**Run Commands:**
+```bash
+pytest tests/ -v                    # Run all tests
+pytest tests/ -v -k "not integration"  # Skip integration tests (sandbox/bwrap)
+pytest tests/test_engine.py -v      # Run specific test file
+pytest tests/test_engine.py::test_name -v  # Run specific test
+```
 
-### 5.7 Cost Tracker Tests (`tests/test_cost_tracker.py`)
+## Test File Organization
 
-- Test private formatting helpers directly: `_fmt_tokens`, `_fmt_duration`, `_tier_for_model`.
-- Test cost calculation with floating-point tolerance (`abs(cost - 18.0) < 0.001`).
-- Test accumulation across multiple API calls and multiple models.
+**Location:**
+- Co-located under `tests/` at project root, mirroring `src/` structure loosely.
+- Core engine tests in `tests/core/` (e.g., `tests/core/test_dehydration.py`).
+- Sandbox tests in `tests/test_sandbox_*.py`.
 
-### 5.8 Runtime Budget Tests (`tests/core/test_engine_runtime_budget.py`)
+**Naming:**
+- `test_<module>.py` for module-level tests.
+- `test_<subsystem>_<aspect>.py` for focused tests (e.g., `test_sandbox_checker.py`).
 
-- Use `DummyClient` and `DummyStream` from `conftest.py`.
-- Monkeypatch `chdir` to control checkpoint output location.
-- Test checkpoint triggering, artifact tracking, and post-tool budget checks.
+**Structure:**
+```
+tests/
+├── conftest.py                     # Shared fixtures and dummy classes
+├── test_engine.py                  # Engine streaming loop tests
+├── test_tools.py                   # Tool execution tests
+├── test_permissions.py             # Permission checker tests
+├── test_llm.py                     # LLM message normalization tests
+├── test_config.py                  # Config loading tests
+├── test_context.py                 # System prompt builder tests
+├── test_cost_tracker.py            # Cost tracking tests
+├── test_skills.py                  # Skill registry tests
+├── test_coordinator.py             # Coordinator mode tests
+├── test_worker_manager.py          # Background worker tests
+├── test_main.py                    # CLI entry point tests
+├── test_session_mode.py            # Session persistence tests
+├── core/
+│   ├── test_dehydration.py         # Message dehydration tests
+│   ├── test_compact_runtime.py     # Context compaction tests
+│   ├── test_engine_runtime_budget.py  # Token budget integration tests
+│   └── test_token_budget.py        # Budget decision logic tests
+└── test_sandbox_*.py               # Sandbox subsystem tests
+```
+
+## Test Structure
+
+**Suite Organization:**
+- Plain functions for simple tests.
+- `class Test<Feature>:` groups for related tests (common in `test_skills.py`, `test_buddy_companion.py`, `test_cost_tracker.py`).
+
+Example from `tests/test_skills.py`:
+```python
+class TestParseFrontmatter:
+    def test_full_frontmatter(self):
+        ...
+
+class TestRegistry:
+    def test_register_and_get(self):
+        ...
+```
+
+**Setup / Teardown:**
+- `pytest.fixture` for shared state.
+- `autouse=True` fixture to clean global registries between tests:
+  ```python
+  @pytest.fixture(autouse=True)
+  def _clean_registry():
+      clear_skills()
+      yield
+      clear_skills()
+  ```
+
+## Mocking
+
+**Framework:** `unittest.mock` (standard library) — `MagicMock`, `patch`, `PropertyMock`.
+
+**Patterns:**
+- Patch LLM client methods to simulate API responses:
+  ```python
+  with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
+      events = list(engine.submit("hi"))
+  ```
+- Monkeypatch environment variables and platform checks:
+  ```python
+  monkeypatch.setattr("core.sandbox.checker.platform.system", lambda: "Linux")
+  monkeypatch.setattr("core.sandbox.checker.shutil.which", lambda x: None)
+  ```
+- Fake classes for terminal listeners to avoid TTY dependencies:
+  ```python
+  class _FakeEscListener:
+      pressed = False
+      def pause(self): pass
+      def resume(self): pass
+  ```
+
+**What to Mock:**
+- API streaming responses (`LLMClient.stream_messages`, `LLMClient.create_message`).
+- Subprocess calls for git status / sandbox checks.
+- Terminal input (`sys.stdin`, `EscListener`).
+- File system via `tmp_path` / `tmp_path` fixtures.
+
+**What NOT to Mock:**
+- Actual tool execution on temporary files (tools read/write real `tmp_path` files).
+- Dataclass construction and simple data transformations.
+
+## Fixtures and Factories
+
+**Test Data:**
+- `tmp_path` (pytest built-in) for filesystem fixtures.
+- `monkeypatch` for environment/config mutation.
+- Custom fixtures in `tests/conftest.py`:
+  - `tmp_repo` — creates a temporary repo with `code-reading-notes/manifest.json`.
+
+**Dummy Classes in `tests/conftest.py`:**
+```python
+class DummyUsage:
+    def __init__(self, input_tokens=0, output_tokens=0, ...):
+        ...
+
+class DummyClient:
+    def stream_messages(self, **kwargs): ...
+    def create_message(self, **kwargs): ...
+
+class DummyPermissionChecker:
+    def check(self, tool, tool_input): return self.decision
+
+class DummyReadOnlyTool:
+    name = "ReadOnlyDummy"
+    def is_read_only(self): return True
+    def execute(self, **kwargs): return ToolResult(content="x" * 1500)
+```
+
+## Coverage
+
+**Requirements:** Not enforced in config.
+
+**View Coverage:**
+```bash
+pytest tests/ --cov=core --cov-report=term-missing
+```
+(Requires `pytest-cov` to be installed; not in current `pyproject.toml` dependencies.)
+
+## Test Types
+
+**Unit Tests:**
+- Majority of the suite.
+- Test individual functions/classes in isolation with mocked dependencies.
+- Examples: `test_llm.py` (message normalization), `test_cost_tracker.py` (pricing math), `test_tools.py` (tool execution on temp files).
+
+**Integration Tests:**
+- `tests/test_sandbox_integration.py` — requires `bwrap` binary; skipped when unavailable:
+  ```python
+  pytestmark = pytest.mark.skipif(not shutil.which("bwrap"), reason="bwrap not available")
+  ```
+- `tests/core/test_engine_runtime_budget.py` — tests full engine loop with dummy client and real checkpoint I/O.
+
+**E2E Tests:**
+- Not used.
+
+## Common Patterns
+
+**Async Testing:**
+- Not applicable; the codebase uses synchronous generators (`Iterator[tuple]`) for streaming, not `async`/`await`.
+
+**Error Testing:**
+- Assert on `ToolResult.is_error`:
+  ```python
+  result = FileEditTool().execute(file_path="/nonexistent", old_string="x", new_string="y")
+  assert result.is_error
+  assert "not found" in result.content.lower()
+  ```
+- `pytest.raises(ValueError, match="...")` for config validation:
+  ```python
+  with pytest.raises(ValueError, match="Invalid max_tokens"):
+      load_app_config(_args(config=str(config_path)))
+  ```
+
+**Event-Driven Testing:**
+- `Engine.submit()` yields tuples; tests filter by event type:
+  ```python
+  events = list(engine.submit("hi"))
+  text_events = [e for e in events if e[0] == "text"]
+  tool_result_events = [e for e in events if e[0] == "tool_result"]
+  ```
+
+**State Mutation Testing:**
+- Verify internal state after operations:
+  ```python
+  assert str(target) in eng._recent_written_artifacts
+  assert target.exists()
+  ```
 
 ---
 
-## 6. Coverage Approach
-
-### 6.1 What Is Tested
-
-| Area | Coverage | Notes |
-|------|----------|-------|
-| Engine loop | High | Text events, tool execution, retries, normalization |
-| Tool execution | High | All major tools tested with real temp files |
-| Config loading | High | CLI, env, TOML, validation, defaults |
-| LLM normalization | High | Anthropic/OpenAI round-trips |
-| Permission system | High | Auto-approve, prompt, caching, plan mode |
-| Cost tracking | High | Pricing tiers, formatting, accumulation |
-| Skills | High | Parsing, registry, disk loading, bundled skills |
-| Context builder | Medium | Sections, git status, CLAUDE.md inclusion |
-| Sandbox (unit) | High | Config, manager, wrapper, checker |
-| Sandbox (integration) | Conditional | Only when `bwrap` is available |
-| Worker manager | Medium | Spawn, continue, stop, checkpoint detection |
-| Coordinator | Medium | Mode switching, prompt generation |
-| Dehydration | Medium | Message replacement, short-content skipping |
-| Token budget | Medium | State transitions, estimation |
-| Checkpoint | Medium | Manifest, progress, report writing |
-| Companion/buddy | Medium | Storage, mood, companion logic |
-
-### 6.2 What Is Not Extensively Tested
-
-- The REPL UI layer (`main.py` rich console output) — tested via `capsys` and event inspection.
-- Actual API calls to Anthropic/OpenAI — fully mocked.
-- Threading race conditions in `WorkerManager` — basic spawn/stop coverage only.
-- Wiki-strict subsystems (`src/core/wiki/`) — minimal test coverage.
-- Knowledge system (`src/core/knowledge/`) — minimal test coverage.
-
-### 6.3 CI Configuration
-
-The project has minimal CI (`.github/workflows/wiki-lint.yml`) that runs wiki validation scripts, not pytest. Test execution is currently manual or run locally.
-
----
-
-## 7. Test Style Guidelines
-
-### 7.1 Assertions
-
-- Prefer specific assertions over broad ones.
-- Use `assert not result.is_error` for success checks on `ToolResult`.
-- Use substring checks for error messages: `assert "not found" in result.content.lower()`.
-- Use `pytest.raises(ValueError, match="...")` for expected exceptions.
-
-### 7.2 Test Data
-
-- Keep test data minimal and inline.
-- Use string multiplication for large content: `"x" * 5000`.
-- Use descriptive variable names: `tmp_path`, `tmp_repo`, `tmp_file`.
-
-### 7.3 Test Isolation
-
-- Each test should be independent.
-- Use fixtures to set up and tear down shared state.
-- Global state (skill registry) is reset via `autouse` fixtures.
-- File system state is isolated via `tmp_path`.
-
-### 7.4 Commented-Out Tests
-
-Some test files contain commented-out tests (e.g., `tests/core/test_compact_runtime.py`, `tests/test_context.py`). These appear to be placeholders or tests disabled during refactoring.
+*Testing analysis: 2026-04-18*
