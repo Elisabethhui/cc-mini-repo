@@ -1,7 +1,7 @@
 # Requirements: cc-mini 32K Context Enhancement
 
-**Version:** v1  
-**Last updated:** 2026-04-20  
+**Version:** v1
+**Last updated:** 2026-04-20
 **Based on:** Research synthesis + codebase audit
 
 ---
@@ -89,11 +89,31 @@
 
 | Requirement | Phase | Verification |
 |-------------|-------|--------------|
-| SEC-01..05 | Phase 1 | Security audit + unit tests |
-| TOK-01..04 | Phase 1 | Unit tests with known token counts |
-| CTX-01..05 | Phase 2 | Integration tests with synthetic sessions |
-| WIK-01..06 | Phase 1 + 2 | Wiki workflow integration test |
-| TST-01..05 | Phase 3 | pytest coverage report |
+| SEC-01 | Phase 1 | Security audit + unit tests |
+| SEC-02 | Phase 1 | Security audit + unit tests |
+| SEC-03 | Phase 1 | Security audit + unit tests |
+| SEC-04 | Phase 1 | Security audit + unit tests |
+| SEC-05 | Phase 1 | Security audit + unit tests |
+| TOK-01 | Phase 1 | Unit tests with known token counts |
+| TOK-02 | Phase 1 | Unit tests with known token counts |
+| TOK-03 | Phase 1 | Unit tests with known token counts |
+| TOK-04 | Phase 1 | Unit tests with known token counts |
+| WIK-01 | Phase 1 | Wiki workflow integration test |
+| WIK-02 | Phase 1 | Integration test for /dream command |
+| WIK-03 | Phase 1 | Static type check (mypy/pyright) |
+| WIK-04 | Phase 1 | Code review — no string state names |
+| WIK-05 | Phase 1 | Unit test with async function AST |
+| WIK-06 | Phase 1 | Integration test with rapid file changes |
+| CTX-01 | Phase 2 | Integration tests with synthetic sessions |
+| CTX-02 | Phase 2 | Integration tests with synthetic sessions |
+| CTX-03 | Phase 2 | Integration tests with synthetic sessions |
+| CTX-04 | Phase 2 | Integration tests with synthetic sessions |
+| CTX-05 | Phase 2 | Integration tests with synthetic sessions |
+| TST-01 | Phase 3 | pytest coverage report |
+| TST-02 | Phase 3 | pytest coverage report |
+| TST-03 | Phase 3 | pytest coverage report |
+| TST-04 | Phase 3 | pytest coverage report |
+| TST-05 | Phase 3 | pytest coverage report |
 
 ---
 
