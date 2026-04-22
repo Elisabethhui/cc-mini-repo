@@ -254,9 +254,13 @@ If you see deeper wiki commands in the codebase, treat them as later-stage surfa
 | Command | Description |
 |---------|-------------|
 | `/review` | Code review (read-only) |
+| `/close` | Draft a milestone closeout; commit happens only after manual `/close confirm` |
+| `/milestone-review` | Read-only review of the latest closeout record |
 | `/simplify` | Review and fix code |
 | `/commit` | Git commit with generated message |
 | `/test` | Run tests and analyze failures |
+
+The closure flow is intentionally split: `/close` drafts the record, `/close confirm` is the manual confirmation step before commit, and `/milestone-review` only reads the latest closeout state.
 
 Type `/` to see autocomplete suggestions.
 

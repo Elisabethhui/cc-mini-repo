@@ -79,6 +79,16 @@ Primary outcome:
 Exit criterion:
 - cc-mini can handle non-coding workflows without collapsing the carefully built coding path or the `standard` compatibility story.
 
+### Phase 6: Delivery Closure Bridge
+
+Primary outcome:
+- `/close` creates a draft closeout record for the current milestone
+- `/close confirm` is the manual confirmation step before any commit happens
+- `/milestone-review` surfaces the latest closeout record as a read-only review
+
+Exit criterion:
+- users can discover the closure flow directly in the product, keep implementation commits separate from closure commits, and review milestone state without accidentally triggering writes or archive actions.
+
 ---
 
 ## Cross-Cutting Guardrails
@@ -99,3 +109,4 @@ The roadmap is accompanied by separate phase plans:
 - [Phase 3 Continuity and Maintenance Plan](./2026-04-21-cc-mini-phase3-continuity-maintenance.md)
 - [Phase 4 Runtime Isolation Plan](./2026-04-21-cc-mini-phase4-runtime-isolation.md)
 - [Phase 5 General Agent Expansion Plan](./2026-04-21-cc-mini-phase5-general-agent-expansion.md)
+- [Phase 6 Delivery Closure Implementation Plan](./2026-04-22-cc-mini-phase6-delivery-closure.md)

@@ -26,6 +26,10 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/task" in output
     assert "/reconcile" in output
     assert "/maintenance" in output
+    assert "/close" in output
+    assert "/milestone-review" in output
+    assert "confirm with /close confirm" in output.lower()
+    assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
     assert "Later-phase /post_edit demo/stub" in output
 
