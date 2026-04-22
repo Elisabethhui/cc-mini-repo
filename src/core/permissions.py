@@ -17,6 +17,11 @@ _PLAN_MODE_ALLOWED_TOOLS = {"Read", "Glob", "Grep", "AskUserQuestion", "EnterPla
 _PLAN_MODE_WRITE_TOOLS = {"Edit", "Write"}  # allowed only for plan file
 
 
+def _plan_write_allowed(plan_path: str | None, file_path: str) -> bool:
+    """Return True only when the write targets the active plan file."""
+    return bool(plan_path) and file_path == plan_path
+
+
 class PermissionChecker:
     """Read-only tools are auto-allowed. Bash/writes prompt the user (y/n/always)."""
 
@@ -30,9 +35,16 @@ class PermissionChecker:
         self._esc_listener: EscListener | None = None
         self._sandbox = sandbox_manager
         self._plan_manager: PlanModeManager | None = None
+        self._run_mode: str | None = None
 
     def set_plan_manager(self, plan_manager: PlanModeManager) -> None:
         self._plan_manager = plan_manager
+
+    def set_run_mode(self, run_mode: object | None) -> None:
+        self._run_mode = getattr(run_mode, "value", run_mode)
+
+    def get_run_mode(self) -> str | None:
+        return self._run_mode
 
     def set_esc_listener(self, listener: EscListener | None):
         self._esc_listener = listener
@@ -46,7 +58,7 @@ class PermissionChecker:
                 # Only allow writing to the plan file
                 file_path = inputs.get("file_path", "")
                 plan_path = self._plan_manager.plan_file_path
-                if plan_path and file_path == plan_path:
+                if _plan_write_allowed(plan_path, file_path):
                     return "allow"
                 from rich.console import Console
                 Console().print(

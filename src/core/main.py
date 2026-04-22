@@ -28,6 +28,7 @@ from rich.markdown import Markdown as RichMarkdown
 from rich.spinner import Spinner
 from rich.text import Text
 
+from .bootstrap import bootstrap_workspace, doctor_workspace, BootstrapStatus
 from .config import load_app_config
 from .coordinator import (
     current_session_mode,
@@ -38,7 +39,7 @@ from .coordinator import (
     match_session_mode,
     set_coordinator_mode,
 )
-from .context import build_system_prompt
+from .context import build_mode_system_prompt
 from .cost_tracker import CostTracker
 from .engine import AbortedError, Engine
 from .session import SessionStore
@@ -146,6 +147,39 @@ class _SlashCommandCompleter(Completer):
 
 
 _slash_completer = _SlashCommandCompleter()
+
+
+def _run_init_command(workspace_root: str | Path) -> None:
+    """Bootstrap the workspace scaffold and print a small status summary."""
+    result = bootstrap_workspace(workspace_root)
+    if result.created_paths:
+        console.print(f"[green]Initialized cc-mini workspace in {result.workspace}[/green]")
+    else:
+        console.print(f"[yellow]cc-mini workspace already present in {result.workspace}[/yellow]")
+    console.print("[dim]Next: run `cc-mini` to open the REPL.[/dim]")
+
+
+def _run_doctor_command(workspace_root: str | Path) -> None:
+    """Inspect workspace readiness without making any changes."""
+    result = doctor_workspace(workspace_root)
+    console.print(f"[bold]cc-mini doctor[/bold] - {result.workspace}")
+
+    if result.status == BootstrapStatus.MISSING:
+        console.print("[red]Workspace is missing the cc-mini scaffold.[/red]")
+        console.print("[dim]Run `cc-mini init` to create it.[/dim]")
+        return
+
+    if result.status == BootstrapStatus.STALE:
+        console.print("[yellow]Workspace scaffold is stale or incomplete.[/yellow]")
+        if result.missing_paths:
+            console.print("[bold]Missing:[/bold]")
+            for path in result.missing_paths:
+                console.print(f"- {path.relative_to(result.workspace)}")
+        console.print("[dim]Run `cc-mini init` to repair the scaffold.[/dim]")
+        return
+
+    console.print("[green]Workspace is initialized and ready.[/green]")
+    console.print("[dim]Run `cc-mini` to open the REPL.[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +690,8 @@ def run_query(engine: Engine, user_input: str | list, print_mode: bool,
 
 
 def _run_dream(engine: Engine, memory_dir: Path,
-               permissions: PermissionChecker, quiet: bool = False) -> None:
+               permissions: PermissionChecker, run_mode: RunMode | None = None,
+               quiet: bool = False) -> None:
     """Run dream consolidation: snapshot messages, submit dream prompt, restore."""
     if not quiet:
         console.print("[dim]Starting dream consolidation…[/dim]")
@@ -666,25 +701,32 @@ def _run_dream(engine: Engine, memory_dir: Path,
     run_query(engine, dream_prompt, print_mode=False, permissions=permissions, quiet=quiet)
     engine.messages = saved_messages
     # Rebuild system prompt to pick up updated MEMORY.md
-    engine.system_prompt = build_system_prompt(memory_dir=memory_dir)
+    engine.system_prompt = build_mode_system_prompt(run_mode=run_mode, memory_dir=memory_dir)
     record_consolidation(memory_dir)
     if not quiet:
         console.print("[dim]Dream consolidation complete. Memory index updated.[/dim]")
 
 
 # === 在原有的 imports 下方追加 ===
-import os
 # 请确保你的 config.py 已经加上了 RunMode 和 get_run_mode
 # 导入模式与知识基座
 from .config import RunMode, get_run_mode
-from .knowledge.ingester import WikiIngester
-from .knowledge.watcher import start_wiki_watcher
 # 导入工具集
 from .tools.ast_read import ASTReadTool
 # ... 其他原有导入 ...
 
 
 def main() -> None:
+    argv = sys.argv[1:]
+    if argv and argv[0] == "init":
+        _run_init_command(Path.cwd())
+        return
+    if argv and argv[0] == "doctor":
+        _run_doctor_command(Path.cwd())
+        return
+    if argv and argv[0] == "run":
+        argv = argv[1:]
+
     parser = argparse.ArgumentParser(prog="cc-mini",
                                      description="Minimal AI coding assistant")
     parser.add_argument("prompt", nargs="?", help="Prompt to send (optional)")
@@ -718,15 +760,12 @@ def main() -> None:
     parser.add_argument(
         "--mode",
         type=str,
-        default="standard",  # 🔥 这里就是你要的默认选项
+        default=None,
         choices=["standard", "wiki_strict"],
         help="Select run mode: standard (default) / wiki_strict"
     )
-    args = parser.parse_args()
-    # os.environ["CC_MINI_MODE"] = args.mode
-    default_mode = os.getenv("CC_MINI_MODE", "standard").lower()
-    args.mode=default_mode
-    run_mode = get_run_mode()
+    args = parser.parse_args(argv)
+    run_mode = get_run_mode(args.mode)
 
 
     try:
@@ -771,7 +810,7 @@ def main() -> None:
     worker_tool_names = [tool.name for tool in _build_base_tools()]
 
     def _build_system_prompt_for_mode(coordinator_enabled: bool) -> str:
-        prompt = build_system_prompt(cwd=cwd, memory_dir=memory_dir)
+        prompt = build_mode_system_prompt(run_mode=run_mode, cwd=cwd, memory_dir=memory_dir)
         if skills_section:
             prompt += "\n\n" + skills_section
         if coordinator_enabled:
@@ -786,13 +825,15 @@ def main() -> None:
         auto_approve=args.auto_approve,
         sandbox_manager=sandbox_mgr,
     )
+    permissions.set_run_mode(run_mode)
 
     def _build_worker_engine() -> Engine:
         worker_permissions = PermissionChecker(
             auto_approve=True,
             sandbox_manager=sandbox_mgr,
         )
-        worker_prompt = build_system_prompt(cwd=cwd, memory_dir=memory_dir)
+        worker_permissions.set_run_mode(run_mode)
+        worker_prompt = build_mode_system_prompt(run_mode=run_mode, cwd=cwd, memory_dir=memory_dir)
         if skills_section:
             worker_prompt += "\n\n" + skills_section
         worker_prompt += "\n\n" + get_worker_system_prompt()
@@ -871,6 +912,7 @@ def main() -> None:
         enabled = is_coordinator_mode()
         engine.set_tools(_build_tools_for_mode(enabled))
         engine.system_prompt = _build_system_prompt_for_mode(enabled)
+        permissions.set_run_mode(run_mode)
         if session_store is not None:
             session_store.mode = current_session_mode()
         return warning
@@ -1040,16 +1082,9 @@ def main() -> None:
     # === [新增代码] Wiki_Strict 模式启动拦截 ===
   
     # ## [WIKI_STRICT] 启动核心：扫描地图与挂载监听
-    watcher_thread = None
     if run_mode == RunMode.WIKI_STRICT:
-        console.print("[bold cyan]🚀 已启用 WIKI_STRICT 模式 (32K 极致降维护航)[/bold cyan]")
-        console.print("[dim]正在扫描工作区并生成 AST 架构地图...[/dim]")
-        
-        ingester = WikiIngester(cwd)
-        ingester.ingest_all()  # 阻塞式首次扫描    
-        watcher_thread = start_wiki_watcher(cwd, ingester)
-        # 将 Wiki 索引路径注入环境供其他模块参考
-        os.environ["CC_MINI_WIKI_PATH"] = str(ingester.index_file)
+        console.print("[bold cyan]🚀 已启用 WIKI_STRICT 模式 (analysis-first)[/bold cyan]")
+        console.print("[dim]wiki_strict will scan only when you explicitly invoke /scan, /prime, or /plan.[/dim]")
 
     while True:
         _drain_worker_notifications()
@@ -1163,7 +1198,7 @@ def main() -> None:
                 app_config=app_config,
                 memory_dir=memory_dir,
                 permissions=permissions,
-                run_dream=lambda: _run_dream(engine, memory_dir, permissions),
+                run_dream=lambda: _run_dream(engine, memory_dir, permissions, run_mode),
                 cost_tracker=cost_tracker,
                 new_session_store=lambda: SessionStore(
                     cwd=cwd,
@@ -1294,19 +1329,13 @@ def main() -> None:
         ):
             if try_acquire_lock(memory_dir):
                 console.print("[dim]Auto-dream running…[/dim]")
-                _run_dream(engine, memory_dir, permissions, quiet=True)
+                _run_dream(engine, memory_dir, permissions, run_mode, quiet=True)
                 release_lock(memory_dir)
 
     # Print cost summary on exit
     if cost_tracker.total_cost_usd > 0:
         console.print(f"\n[dim]{cost_tracker.format_cost()}[/dim]")
     # === [新增代码] 优雅停机 ===
-    if watcher_thread is not None:
-        console.print("[dim]正在关闭 Wiki 监听器...[/dim]")
-        watcher_thread.stop()
-        watcher_thread.join()
-
-
 def _handle_sandbox_command(
     user_input: str, mgr: SandboxManager, con: Console
 ) -> None:

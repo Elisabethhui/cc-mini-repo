@@ -26,3 +26,11 @@ plan.md
 CLAUDE.md
 
 .cc-mini.toml
+
+# Removed during project cleanup
+.cc-mini/
+validation-runs/
+memory-bank/
+scripts/
+manifests/
+docs/wiki/

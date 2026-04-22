@@ -41,6 +41,53 @@ def match_session_mode(session_mode: str | None) -> str | None:
     if session_mode == "coordinator":
         return "Entered coordinator mode to match resumed session."
     return "Exited coordinator mode to match resumed session."
+
+
+_TASK_ADJACENT_HINTS = (
+    "code",
+    "coding",
+    "file",
+    "files",
+    "bug",
+    "fix",
+    "refactor",
+    "patch",
+    "test",
+    "tests",
+    "plan",
+    "implement",
+    "implementation",
+    "workspace",
+    "module",
+    "repo",
+    "repository",
+    "diff",
+    "edit",
+)
+
+
+def classify_task_intent(text: str) -> str:
+    """Classify a task request as coding-adjacent or general."""
+    normalized = text.lower()
+    if any(hint in normalized for hint in _TASK_ADJACENT_HINTS):
+        return "coding-adjacent"
+    return "general"
+
+
+def build_task_intake_prompt(task_text: str) -> str:
+    intent = classify_task_intent(task_text)
+    cleaned = task_text.strip()
+    return (
+        "Task intake request:\n"
+        f"- Intent: {intent}\n"
+        f"- Request: {cleaned}\n\n"
+        "Prefer the coding-adjacent route when the request can reasonably be "
+        "expressed that way.\n"
+        "If the task is truly non-coding, keep the response bounded and "
+        "practical instead of broadening scope."
+    )
+
+
 def is_checkpoint_stop_message(text: str) -> bool:
     return "/resume-from-checkpoint" in text and "checkpoint" in text.lower()
 
@@ -79,6 +126,8 @@ You are a **coordinator**. Your job is to:
 - Direct workers to research, implement and verify code changes
 - Synthesize results and communicate with the user
 - Answer questions directly when possible — don't delegate work that you can handle without tools
+- When a request looks like a broader task, still prefer the coding-adjacent route first when that is a reasonable framing.
+- Keep general-task handling bounded and explainable; do not turn every request into a multi-worker fan-out.
 
 Every message you send is to the user. Worker results and system notifications are internal signals, not conversation partners — never thank or acknowledge them. Summarize new information for the user as it arrives.
 
@@ -92,6 +141,7 @@ When calling Agent:
 - Do not use one worker to check on another. Workers will notify you when they are done.
 - Do not use workers to trivially report file contents or run commands. Give them higher-level tasks.
 - Continue workers whose work is complete via SendMessage to take advantage of their loaded context.
+- Use the `task_kind` hint when launching workers: `coding` for code work, `research` for read-only investigation, and `general` for bounded non-coding tasks.
 - After launching agents, briefly tell the user what you launched and end your response. Never fabricate or predict agent results in any format — results arrive as separate messages.
 
 ### Agent Results
@@ -338,4 +388,3 @@ def get_minimal_goal_stack() -> dict[str, str]:
         "done_definition": "",
         "out_of_scope": "",
     }
-

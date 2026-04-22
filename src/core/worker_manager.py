@@ -23,6 +23,7 @@ class WorkerTask:
     task_id: str
     description: str
     engine: object
+    task_kind: str = "coding"
     status: str = "idle"
     summary: str = ""
     result: str = ""
@@ -45,34 +46,39 @@ class WorkerManager:
         *,
         description: str,
         prompt: str,
+        task_kind: str = "coding",
         subagent_type: str = "worker",
     ) -> dict[str, str]:
         if subagent_type != "worker":
             raise ValueError("Only subagent_type='worker' is supported.")
 
+        normalized_kind = self._normalize_task_kind(task_kind)
         task = WorkerTask(
             task_id=f"agent-{uuid.uuid4().hex[:8]}",
             description=description.strip() or "Worker task",
             engine=self._build_worker_engine(),
+            task_kind=normalized_kind,
         )
         with self._lock:
             self._tasks[task.task_id] = task
-        self._start(task, prompt)
+        self._start(task, self._decorate_prompt(prompt, normalized_kind))
         return {
             "task_id": task.task_id,
             "status": "started",
             "description": task.description,
+            "task_kind": task.task_kind,
         }
 
     def continue_task(self, *, task_id: str, message: str) -> dict[str, str]:
         task = self._get_task(task_id)
         if self._is_running(task):
             raise ValueError("Task is still running. Wait for it to finish before continuing it.")
-        self._start(task, message)
+        self._start(task, self._decorate_prompt(message, task.task_kind))
         return {
             "task_id": task.task_id,
             "status": "started",
             "description": task.description,
+            "task_kind": task.task_kind,
         }
 
     def stop_task(self, *, task_id: str) -> dict[str, str]:
@@ -82,6 +88,7 @@ class WorkerManager:
                 "task_id": task.task_id,
                 "status": task.status or "idle",
                 "description": task.description,
+                "task_kind": task.task_kind,
             }
         try:
             task.engine.abort()
@@ -91,6 +98,7 @@ class WorkerManager:
             "task_id": task.task_id,
             "status": "stopping",
             "description": task.description,
+            "task_kind": task.task_kind,
         }
 
     def drain_notifications(self) -> list[str]:
@@ -112,6 +120,7 @@ class WorkerManager:
                 {
                     "task_id": t.task_id,
                     "description": t.description,
+                    "task_kind": t.task_kind,
                     "tool_uses": t.tool_use_count,
                     "activity": t.current_activity,
                 }
@@ -129,6 +138,26 @@ class WorkerManager:
     @staticmethod
     def _is_running(task: WorkerTask) -> bool:
         return task.thread is not None and task.thread.is_alive()
+
+    @staticmethod
+    def _normalize_task_kind(task_kind: str) -> str:
+        normalized = (task_kind or "coding").strip().lower()
+        if normalized not in {"coding", "research", "general"}:
+            raise ValueError("task_kind must be one of: coding, research, general")
+        return normalized
+
+    @staticmethod
+    def _decorate_prompt(prompt: str, task_kind: str) -> str:
+        prefix_map = {
+            "coding": "This is a coding task. Treat code changes as the default route when the request is about implementation.",
+            "research": "This is a research task. Keep it read-only unless the prompt explicitly asks for edits.",
+            "general": "This is a general task. Keep the answer bounded and avoid unnecessary code changes.",
+        }
+        prefix = prefix_map.get(task_kind, prefix_map["coding"])
+        cleaned = prompt.strip()
+        if task_kind == "coding":
+            return cleaned
+        return f"{prefix}\n\n{cleaned}" if cleaned else prefix
 
     def _start(self, task: WorkerTask, prompt: str) -> None:
         task.status = "running"
@@ -183,15 +212,15 @@ class WorkerManager:
                 elif kind == "error":
                     parts.append(event[1])
             status = "completed"
-            summary = f'Agent "{task.description}" completed'
+            summary = f'Agent "{task.description}" ({task.task_kind}) completed'
             ##
             joined = "".join(parts)
             if "checkpoint saved" in joined.lower() and "/resume-from-checkpoint" in joined:
                 status = "completed"
-                summary = f'Agent "{task.description}" paused safely at checkpoint'
+                summary = f'Agent "{task.description}" ({task.task_kind}) paused safely at checkpoint'
             else:
                 status = "completed"
-                summary = f'Agent "{task.description}" completed'
+                summary = f'Agent "{task.description}" ({task.task_kind}) completed'
             ##
  
 
@@ -218,6 +247,7 @@ class WorkerManager:
         parts = [
             "<task-notification>",
             f"<task-id>{escape(task.task_id)}</task-id>",
+            f"<task-kind>{escape(task.task_kind)}</task-kind>",
             f"<status>{escape(task.status)}</status>",
             f"<summary>{escape(task.summary)}</summary>",
         ]

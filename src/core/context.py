@@ -315,3 +315,20 @@ def build_system_prompt(cwd: str | None = None, memory_dir: Path | None = None) 
     return "\n\n".join(s for s in sections if s)
 
 
+def build_mode_system_prompt(
+    run_mode: object | None = None,
+    cwd: str | None = None,
+    memory_dir: Path | None = None,
+) -> str:
+    """Assemble the full system prompt plus a mode-specific assumptions section.
+
+    `standard` stays on the general prompt path, while `wiki_strict` gets the
+    extra flow-state section so the runtime boundary is visible in one place.
+    """
+    from .flow_state import get_mode_flow_state_prompt
+
+    prompt = build_system_prompt(cwd=cwd, memory_dir=memory_dir)
+    mode_section = get_mode_flow_state_prompt(run_mode)
+    if mode_section:
+        prompt += "\n\n" + mode_section
+    return prompt

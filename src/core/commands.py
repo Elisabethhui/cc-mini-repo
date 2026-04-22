@@ -13,7 +13,12 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 from rich.table import Table
 
-from .coordinator import current_session_mode, match_session_mode
+from .coordinator import (
+    build_task_intake_prompt,
+    classify_task_intent,
+    current_session_mode,
+    match_session_mode,
+)
 
 if TYPE_CHECKING:
     from .compact import CompactService
@@ -281,6 +286,20 @@ def _cmd_skills(ctx: CommandContext, args: str) -> None:
         hint = f" [{s.argument_hint}]" if s.argument_hint else ""
         table.add_row(f"/{s.name}{hint}", s.source, s.description)
     ctx.console.print(table)
+
+
+def _cmd_task(ctx: CommandContext, args: str) -> None:
+    """Route a broader task request through the task-intake surface."""
+    description = args.strip()
+    if not description:
+        ctx.console.print("[dim]Usage: /task <task description>[/dim]")
+        return
+
+    intent = classify_task_intent(description)
+    ctx.console.print(f"[dim]Routing as {intent} intake.[/dim]")
+    ctx.pending_query = build_task_intake_prompt(description)
+
+
 def _cmd_cost(ctx: CommandContext, args: str) -> None:
     if ctx.cost_tracker is None:
         ctx.console.print("[dim]Cost tracking is not available.[/dim]")
@@ -451,7 +470,7 @@ def _cmd_plan(ctx: CommandContext, args: str) -> None:
 
 
 def _cmd_prime(ctx: CommandContext, args: str) -> None:
-    """Prime a task: generate TaskPack with Target Identity resolution."""
+    """Prime a task for the phase1 analysis chain and generate a TaskPack."""
     from .wiki.taskpack import TaskPackManager, TaskPack, TaskStatus
     from .wiki.target_identity import TargetResolver, TargetIdentityStore, TargetResolutionStatus
     from pathlib import Path
@@ -534,7 +553,7 @@ def _cmd_prime(ctx: CommandContext, args: str) -> None:
 
 
 def _cmd_plan_wiki(ctx: CommandContext, args: str) -> None:
-    """Generate structured plan in wiki_strict mode (TaskPack -> EditSpec)."""
+    """Generate a structured plan for the phase1 wiki_strict analysis chain."""
     from .wiki.taskpack import TaskPackManager, EditSpec, TaskStatus
     from .config import get_run_mode, RunMode
     from pathlib import Path
@@ -672,7 +691,7 @@ def _cmd_plan_wiki(ctx: CommandContext, args: str) -> None:
 
 
 def _cmd_scan(ctx: CommandContext, args: str) -> None:
-    """Scan workspace and generate/update wiki entities."""
+    """Scan the workspace and refresh wiki entities for phase1 analysis."""
     from .knowledge.ingester import WikiIngester
 
     workspace_root = str(os.getcwd())
@@ -684,7 +703,7 @@ def _cmd_scan(ctx: CommandContext, args: str) -> None:
 
 
 def _cmd_digest(ctx: CommandContext, args: str) -> None:
-    """Digest specific target or --changed files."""
+    """Digest a target or changed files to support the wiki analysis chain."""
     from .knowledge.ingester import WikiIngester
     from .knowledge.watcher import get_changed_tracker
     from pathlib import Path
@@ -720,8 +739,68 @@ def _cmd_digest(ctx: CommandContext, args: str) -> None:
         ctx.console.print("[dim]Usage: /digest <file-path> or /digest --changed[/dim]")
 
 
+def _cmd_reconcile(ctx: CommandContext, args: str) -> None:
+    """View-only reconcile projection for semantic artifacts."""
+    from .wiki.reconcile import ReconcileEngine
+
+    engine = ReconcileEngine(Path.cwd())
+    projection = engine.project_artifact_reconcile()
+
+    ctx.console.print("[bold cyan]Reconcile Projection (view-only)[/bold cyan]")
+    ctx.console.print(f"[dim]Derived artifacts: {projection['derived_count']}[/dim]")
+    ctx.console.print(f"[dim]Manual artifacts: {projection['manual_count']}[/dim]")
+
+    if not projection["items"]:
+        ctx.console.print("[dim]No artifact-backed reconcile suggestions.[/dim]")
+        return
+
+    table = Table(title="Reconcile Suggestions", show_header=True, header_style="bold cyan")
+    table.add_column("Layer", style="green", width=8)
+    table.add_column("Task", style="dim", width=16)
+    table.add_column("Status", width=18)
+    table.add_column("Reason")
+    for item in projection["items"]:
+        table.add_row(
+            item.current_status.split("_")[0] if item.current_status else "derived",
+            item.entity_path.split("/")[-1],
+            item.current_status,
+            item.reason,
+        )
+    ctx.console.print(table)
+
+
+def _cmd_maintenance(ctx: CommandContext, args: str) -> None:
+    """View-only maintenance projection for semantic artifacts."""
+    from .wiki.maintenance import MaintenanceEngine
+
+    engine = MaintenanceEngine(Path.cwd())
+    projection = engine.project_artifact_maintenance()
+
+    ctx.console.print("[bold cyan]Maintenance Projection (view-only)[/bold cyan]")
+    ctx.console.print(f"[dim]Derived artifacts: {projection['derived_count']}[/dim]")
+    ctx.console.print(f"[dim]Manual artifacts: {projection['manual_count']}[/dim]")
+
+    if not projection["items"]:
+        ctx.console.print("[dim]No artifact-backed maintenance suggestions.[/dim]")
+        return
+
+    table = Table(title="Maintenance Suggestions", show_header=True, header_style="bold cyan")
+    table.add_column("Layer", style="green", width=8)
+    table.add_column("Item", style="dim", width=16)
+    table.add_column("Action", width=14)
+    table.add_column("Reason")
+    for item in projection["items"]:
+        table.add_row(
+            item.item_type.replace("_artifact", ""),
+            Path(item.item_path).name,
+            item.action.value,
+            item.reason,
+        )
+    ctx.console.print(table)
+
+
 def _cmd_init_build(ctx: CommandContext, args: str) -> None:
-    """Initialize wiki base: scan workspace, digest all files, and build wiki structure."""
+    """Legacy wiki bootstrap: scan, digest, and build the full wiki structure."""
     from .knowledge.ingester import WikiIngester
     from pathlib import Path
     from datetime import datetime
@@ -729,6 +808,7 @@ def _cmd_init_build(ctx: CommandContext, args: str) -> None:
     workspace_root = Path.cwd()
     ingester = WikiIngester(str(workspace_root))
 
+    ctx.console.print("[yellow]Legacy /init_build is a later-phase surface, not part of Phase 1.[/yellow]")
     ctx.console.print("[dim]Initializing wiki base...[/dim]")
     ctx.console.print("[dim]  Step 1/3: Scanning workspace...[/dim]")
 
@@ -780,12 +860,14 @@ Auto-generated: {datetime.now().isoformat()}
 
 
 def _cmd_post_edit(ctx: CommandContext, args: str) -> None:
-    """Post-edit guard: analyze impact after patch and determine completion state."""
+    """Later-phase post-edit guard: analyze impact after patch and determine completion state."""
     from .wiki.post_edit_guard import PostEditGuard, CompletionState, format_impact_summary
     from pathlib import Path
 
     workspace_root = Path.cwd()
     guard = PostEditGuard(str(workspace_root))
+
+    ctx.console.print("[yellow]Later-phase /post_edit surface (demo/stub in Phase 1); not part of the minimal startup path.[/yellow]")
 
     # Parse args: task_id [status|finalize|report]
     parts = args.strip().split() if args else []
@@ -899,14 +981,17 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("remember", "Save a note to the daily log [text]",             _cmd_remember),
     ("dream",    "Consolidate daily logs into topic files",          _cmd_dream),
     ("skills",   "List all available skills",                       _cmd_skills),
+    ("task",     "Task intake for coding-adjacent or general requests [description]", _cmd_task),
     ("cost",    "Show token usage and cost summary",               _cmd_cost),
     ("model",   "Show or switch model [model-name]",               _cmd_model),
-    ("plan",    "Enter plan mode or show current plan",             _cmd_plan_wiki),
-    ("scan",       "Scan workspace and build wiki entities",          _cmd_scan),
-    ("digest",     "Digest file or --changed [path|--changed]",       _cmd_digest),
-    ("init_build", "Initialize wiki base: scan + digest + build structure", _cmd_init_build),
-    ("post_edit",  "Post-edit guard: analyze impact and check completion [task_id|analyze|report|finalize]", _cmd_post_edit),
-    ("prime",      "Prime a task: generate TaskPack [task-id]",       _cmd_prime),
+    ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
+    ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
+    ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),
+    ("reconcile", "Later-phase view-only reconcile projection", _cmd_reconcile),
+    ("maintenance", "Later-phase view-only maintenance projection", _cmd_maintenance),
+    ("init_build", "Legacy /init_build (later-phase, not Phase 1)", _cmd_init_build),
+    ("post_edit",  "Later-phase /post_edit demo/stub [task_id|analyze|report|finalize]", _cmd_post_edit),
+    ("prime",      "Phase1 prime task and generate TaskPack [task-id]", _cmd_prime),
 ]
 
 _HANDLERS: dict[str, object] = {name: handler for name, _, handler in _COMMAND_TABLE}

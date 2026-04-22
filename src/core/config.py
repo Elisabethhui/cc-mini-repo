@@ -341,16 +341,18 @@ def _provider_env_values(env_values: dict[str, Any], provider: str) -> dict[str,
         "base_url": env_values.get("anthropic_base_url"),
     }
 
-##add
 import os
 from enum import Enum
 class RunMode(str, Enum):
     STANDARD = "standard"  # 现有的全文阅读、多 Agent 协作模式
     WIKI_STRICT = "wiki_strict" # 针对 32K 的图谱导航、状态机模式
-# 获取当前运行模式的便捷函数
-def get_run_mode() -> RunMode:
-    mode_str = os.getenv("CC_MINI_MODE", "standard").lower()
+def resolve_run_mode(cli_mode: str | None = None, env_mode: str | None = None) -> RunMode:
+    mode_str = (cli_mode or env_mode or os.getenv("CC_MINI_MODE", "standard")).lower()
     try:
         return RunMode(mode_str)
     except ValueError:
         return RunMode.STANDARD
+
+
+def get_run_mode(cli_mode: str | None = None) -> RunMode:
+    return resolve_run_mode(cli_mode=cli_mode)

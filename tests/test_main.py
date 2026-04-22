@@ -1,5 +1,7 @@
+import sys
 from unittest.mock import MagicMock, patch, PropertyMock
 from core.engine import Engine, AbortedError
+from core.bootstrap import bootstrap_workspace, doctor_workspace
 from core.tools.base import Tool, ToolResult
 from core.permissions import PermissionChecker
 
@@ -117,3 +119,182 @@ def test_run_query_handles_keyboard_interrupt():
     with patch.object(engine._client, "stream_messages", side_effect=raise_interrupt):
         run_query(engine, "hi", print_mode=True)
     # Should not propagate the exception
+
+
+def test_init_command_bootstraps_workspace(tmp_path, capsys):
+    """cc-mini init should create the bootstrap scaffold in the current workspace."""
+    from core.main import main
+
+    with patch.object(sys, "argv", ["cc-mini", "init"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.bootstrap_workspace", wraps=bootstrap_workspace) as mocked_bootstrap:
+        main()
+
+    mocked_bootstrap.assert_called_once_with(tmp_path)
+
+    index_file = tmp_path / ".cc-mini" / "wiki" / "index.md"
+    assert index_file.exists()
+    assert index_file.read_text(encoding="utf-8").startswith("# cc-mini Phase 1 Workspace")
+
+    output = capsys.readouterr().out
+    assert "Initialized cc-mini workspace" in output
+    assert "Next: run `cc-mini` to open the REPL." in output
+
+
+def test_init_command_reports_already_present(tmp_path, capsys):
+    """cc-mini init should tell the user when the scaffold already exists."""
+    from core.main import main
+
+    bootstrap_workspace(tmp_path)
+
+    with patch.object(sys, "argv", ["cc-mini", "init"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.bootstrap_workspace", wraps=bootstrap_workspace) as mocked_bootstrap:
+        main()
+
+    mocked_bootstrap.assert_called_once_with(tmp_path)
+    output = capsys.readouterr().out
+    assert "already present" in output
+def test_doctor_command_reports_missing_workspace(tmp_path, capsys):
+    """cc-mini doctor should report a missing workspace without modifying files."""
+    from core.main import main
+
+    with patch.object(sys, "argv", ["cc-mini", "doctor"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.doctor_workspace", wraps=doctor_workspace) as mocked_doctor:
+        main()
+
+    mocked_doctor.assert_called_once_with(tmp_path)
+    assert not (tmp_path / ".cc-mini").exists()
+
+    output = capsys.readouterr().out
+    assert "Workspace is missing the cc-mini scaffold." in output
+    assert "Run `cc-mini init` to create it." in output
+
+
+def test_doctor_command_reports_initialized_workspace(tmp_path, capsys):
+    """cc-mini doctor should report a ready workspace clearly."""
+    from core.main import main
+
+    bootstrap_workspace(tmp_path)
+
+    with patch.object(sys, "argv", ["cc-mini", "doctor"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.doctor_workspace", wraps=doctor_workspace) as mocked_doctor:
+        main()
+
+    mocked_doctor.assert_called_once_with(tmp_path)
+    output = capsys.readouterr().out
+    assert "Workspace is initialized and ready." in output
+    assert "Run `cc-mini` to open the REPL." in output
+
+
+def test_doctor_command_reports_stale_workspace(tmp_path, capsys):
+    """cc-mini doctor should identify a stale scaffold."""
+    from core.main import main
+
+    bootstrap_workspace(tmp_path)
+    (tmp_path / ".cc-mini" / "wiki" / "index.md").unlink()
+
+    with patch.object(sys, "argv", ["cc-mini", "doctor"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.doctor_workspace", wraps=doctor_workspace) as mocked_doctor:
+        main()
+
+    mocked_doctor.assert_called_once_with(tmp_path)
+    output = capsys.readouterr().out
+    assert "Workspace scaffold is stale or incomplete." in output
+    assert "Missing:" in output
+    assert "wiki/index.md" in output
+
+
+def test_run_command_strips_explicit_run_prefix_and_preserves_mode(tmp_path):
+    """cc-mini run should strip the explicit run prefix and honor --mode."""
+    from core.main import main
+    from core.config import RunMode
+
+    captured = {}
+
+    def fake_run_query(engine, user_input, print_mode, permissions=None, quiet=False):
+        captured["user_input"] = user_input
+        captured["print_mode"] = print_mode
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--mode", "wiki_strict", "hello"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.run_query", side_effect=fake_run_query), \
+         patch("core.main.get_run_mode", return_value=RunMode.WIKI_STRICT) as mocked_run_mode, \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store:
+        mocked_session_store.return_value = object()
+        main()
+
+    mocked_run_mode.assert_called_once_with("wiki_strict")
+    assert captured["user_input"] == "hello"
+    assert captured["print_mode"] is False
+
+
+def test_wiki_strict_startup_is_lazy(tmp_path, capsys):
+    """wiki_strict startup should not auto-ingest or start the watcher before prompting."""
+    from core.main import main
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--mode", "wiki_strict"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store, \
+         patch("core.main._bordered_prompt", side_effect=EOFError):
+        mocked_session_store.return_value.session_id = "session-1"
+        mocked_session_store.return_value.mode = "standard"
+        main()
+
+    output = capsys.readouterr().out
+    assert "analysis-first" in output
+    assert "正在扫描工作区" not in output
+
+
+def test_standard_startup_stays_quiet_about_wiki_strict(tmp_path, capsys):
+    """standard mode should not emit wiki_strict-specific startup text."""
+    from core.main import main
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--mode", "standard"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store, \
+         patch("core.main._bordered_prompt", side_effect=EOFError):
+        mocked_session_store.return_value.session_id = "session-1"
+        mocked_session_store.return_value.mode = "standard"
+        main()
+
+    output = capsys.readouterr().out
+    assert "analysis-first" not in output
+    assert "wiki_strict will scan only when you explicitly invoke /scan, /prime, or /plan." not in output
+
+
+def test_standard_startup_skips_wiki_strict_banner(tmp_path, capsys):
+    """standard startup should reach the normal REPL path without wiki_strict banners."""
+    from core.main import main
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--mode", "standard"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store, \
+         patch("core.main._bordered_prompt", side_effect=EOFError) as mocked_prompt:
+        mocked_session_store.return_value.session_id = "session-1"
+        mocked_session_store.return_value.mode = "standard"
+        main()
+
+    assert mocked_prompt.call_count == 1
+    output = capsys.readouterr().out
+    assert "analysis-first" not in output
+    assert "wiki_strict will scan only" not in output
+    assert "cc-mini" in output
+
+
+def test_mode_specific_system_prompt_differs_by_run_mode(tmp_path):
+    from core.config import RunMode
+    from core.context import build_mode_system_prompt
+
+    standard_prompt = build_mode_system_prompt(run_mode=RunMode.STANDARD, cwd=str(tmp_path))
+    wiki_prompt = build_mode_system_prompt(run_mode=RunMode.WIKI_STRICT, cwd=str(tmp_path))
+
+    assert "WIKI_STRICT Flow-State Mode" not in standard_prompt
+    assert "WIKI_STRICT Flow-State Mode" in wiki_prompt

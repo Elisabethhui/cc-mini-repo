@@ -18,6 +18,12 @@ class AgentTool(Tool):
         "properties": {
             "description": {"type": "string", "description": "Short label for the worker task"},
             "prompt": {"type": "string", "description": "Self-contained instructions for the worker"},
+            "task_kind": {
+                "type": "string",
+                "enum": ["coding", "research", "general"],
+                "default": "coding",
+                "description": "Task intent hint for the worker",
+            },
             "subagent_type": {
                 "type": "string",
                 "enum": ["worker"],
@@ -39,12 +45,14 @@ class AgentTool(Tool):
         self,
         description: str,
         prompt: str,
+        task_kind: str = "coding",
         subagent_type: str = "worker",
     ) -> ToolResult:
         try:
             payload = self._manager.spawn(
                 description=description,
                 prompt=prompt,
+                task_kind=task_kind,
                 subagent_type=subagent_type,
             )
         except ValueError as exc:

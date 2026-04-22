@@ -8,6 +8,7 @@ from core.config import (
     DEFAULT_MODEL,
     default_max_tokens_for_model,
     load_app_config,
+    resolve_run_mode,
     resolve_model,
 )
 
@@ -166,3 +167,9 @@ def test_openai_env_wins_when_provider_is_openai(monkeypatch: pytest.MonkeyPatch
     assert config.base_url == "https://openai.env"
     assert config.model == "gpt-4.1"
     assert config.buddy_model == "gpt-4.1-mini"
+
+
+def test_resolve_run_mode_prefers_cli_choice_over_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CC_MINI_MODE", "standard")
+
+    assert resolve_run_mode("wiki_strict") == "wiki_strict"

@@ -1,6 +1,6 @@
 """
-Reconcile module (Phase 5)
-Handles stale/drift/digest expired pages reconciliation.
+Reconcile module (Phase 3 projections)
+Handles stale/drift/digest expired pages reconciliation and read-only projections.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from enum import Enum
+
+from .semantic_artifacts import SemanticArtifactStore
 
 
 class ReconcileAction(str, Enum):
@@ -169,6 +171,8 @@ class ReconcileEngine:
         Scans for stale entities and generates reconcile items.
         """
         items = self.scan_for_stale()
+        artifact_projection = self.project_artifact_reconcile()
+        items.extend(artifact_projection["items"])
 
         # Check for source drift on non-stale entities
         if self.entities_dir.exists():
@@ -189,6 +193,11 @@ class ReconcileEngine:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "items_found": len(items),
             "items": [item.to_dict() for item in items],
+            "artifact_projection": {
+                "derived_count": artifact_projection["derived_count"],
+                "manual_count": artifact_projection["manual_count"],
+                "items": [item.to_dict() for item in artifact_projection["items"]],
+            },
             "dry_run": dry_run,
         }
 
@@ -208,6 +217,40 @@ class ReconcileEngine:
 
         logs.append(result)
         self.reconcile_log.write_text(json.dumps(logs, indent=2), encoding="utf-8")
+
+    def project_artifact_reconcile(self) -> dict[str, Any]:
+        """
+        Build a read-only reconcile projection from semantic artifacts.
+        """
+        store = SemanticArtifactStore(self.workspace)
+        items: list[ReconcileItem] = []
+        derived_count = 0
+        manual_count = 0
+
+        for record in store.list_layer("derived"):
+            derived_count += 1
+            if record.kind in {"drift_note", "maintenance_candidate"}:
+                items.append(ReconcileItem(
+                    entity_path=f".cc-mini/wiki/artifacts/derived/{record.artifact_id}.json",
+                    current_status=record.kind,
+                    reason=f"Derived artifact projection for {record.task_id}",
+                    suggested_action=ReconcileAction.DEFER,
+                ))
+
+        for record in store.list_layer("manual"):
+            manual_count += 1
+            items.append(ReconcileItem(
+                entity_path=f".cc-mini/wiki/artifacts/manual/{record.artifact_id}.json",
+                current_status="manual_annotation",
+                reason=f"Manual artifact projection for {record.task_id}: {record.kind}",
+                suggested_action=ReconcileAction.DEFER,
+            ))
+
+        return {
+            "derived_count": derived_count,
+            "manual_count": manual_count,
+            "items": items,
+        }
 
     def apply_action(self, entity_path: str, action: ReconcileAction) -> dict[str, Any]:
         """

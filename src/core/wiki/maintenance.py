@@ -1,6 +1,7 @@
 """
-Maintenance and Stale Recovery module (Phase 5)
-Handles lifecycle maintenance of snapshots, deferred issues, taskpacks, and digest pages.
+Maintenance and Stale Recovery module (Phase 3 projections)
+Handles lifecycle maintenance of snapshots, deferred issues, taskpacks, and digest pages,
+plus read-only semantic artifact projections.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 from enum import Enum
+
+from .semantic_artifacts import SemanticArtifactStore
 
 
 class MaintenanceAction(str, Enum):
@@ -57,6 +60,8 @@ class MaintenanceEngine:
         Returns report of actions taken.
         """
         items: list[MaintenanceItem] = []
+        artifact_projection = self.project_artifact_maintenance()
+        items.extend(artifact_projection["items"])
 
         # Check each type
         items.extend(self._maintain_snapshots(dry_run))
@@ -81,6 +86,20 @@ class MaintenanceEngine:
                 }
                 for i in items
             ],
+            "artifact_projection": {
+                "derived_count": artifact_projection["derived_count"],
+                "manual_count": artifact_projection["manual_count"],
+                "items": [
+                    {
+                        "item_path": i.item_path,
+                        "item_type": i.item_type,
+                        "action": i.action.value,
+                        "reason": i.reason,
+                        "executed": i.executed,
+                    }
+                    for i in artifact_projection["items"]
+                ],
+            },
             "index_updated": index_updated,
         }
 
@@ -238,6 +257,40 @@ Auto-generated: {datetime.now(timezone.utc).isoformat()}
             index_file.write_text(index_content, encoding="utf-8")
             return True
         return False
+
+    def project_artifact_maintenance(self) -> dict[str, Any]:
+        """
+        Build a read-only maintenance projection from semantic artifacts.
+        """
+        store = SemanticArtifactStore(self.workspace)
+        items: list[MaintenanceItem] = []
+        derived_count = 0
+        manual_count = 0
+
+        for record in store.list_layer("derived"):
+            derived_count += 1
+            if record.kind == "maintenance_candidate":
+                items.append(MaintenanceItem(
+                    item_path=f".cc-mini/wiki/artifacts/derived/{record.artifact_id}.json",
+                    item_type="derived_artifact",
+                    action=MaintenanceAction.UPDATE_INDEX,
+                    reason=f"Derived maintenance candidate for {record.task_id}",
+                ))
+
+        for record in store.list_layer("manual"):
+            manual_count += 1
+            items.append(MaintenanceItem(
+                item_path=f".cc-mini/wiki/artifacts/manual/{record.artifact_id}.json",
+                item_type="manual_artifact",
+                action=MaintenanceAction.UPDATE_INDEX,
+                reason=f"Manual artifact projection for {record.task_id}: {record.kind}",
+            ))
+
+        return {
+            "derived_count": derived_count,
+            "manual_count": manual_count,
+            "items": items,
+        }
 
     def _gather_stats(self) -> dict[str, int]:
         """Gather statistics about wiki contents."""
