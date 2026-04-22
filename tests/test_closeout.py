@@ -36,6 +36,7 @@ def test_closeout_record_round_trip(tmp_path):
     assert path.exists()
     assert md_path.exists()
     assert "commit confirmation" in store.render_markdown(restored)
+    assert "commit confirmation" in md_path.read_text(encoding="utf-8")
 
     json_payload = json.loads(path.read_text(encoding="utf-8"))
     assert json_payload["task_id"] == "task-1"
