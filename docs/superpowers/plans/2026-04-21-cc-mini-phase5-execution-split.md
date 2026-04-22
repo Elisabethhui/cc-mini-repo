@@ -10,6 +10,8 @@
 
 ---
 
+**Status:** `M5-E1` completed, `M5-E2` completed, `M5-E3` completed.
+
 ## Milestone 1: Task Intake Surface
 
 ### Task M5-E1: Add a dedicated task-intake command and task-intent helper
@@ -43,6 +45,7 @@
 - `cc-mini /task ...` accepts a broader request and clearly signals how it will be treated.
 - The coordinator prompt tells the model to prefer coding-adjacent decomposition when possible.
 - Existing coding commands still behave exactly as before.
+- Completed in the current session.
 
 ### Task M5-E2: Make worker orchestration task-kind aware
 
@@ -74,6 +77,7 @@
 **Done criteria:**
 - Worker launches can be labeled as coding, research, or general without changing the launch protocol shape.
 - Worker notifications preserve the new metadata clearly enough for the coordinator to reason about them.
+- Completed in the current session.
 
 ## Milestone 2: General-Agent Guardrails
 
@@ -105,6 +109,7 @@
 **Done criteria:**
 - README explains the bounded general-agent expansion clearly.
 - The new tests pin the first-wave behavior so later work cannot quietly broaden scope without review.
+- Completed in the current session.
 
 ## Transcription Notes For GSD
 

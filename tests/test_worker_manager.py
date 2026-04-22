@@ -82,3 +82,33 @@ def test_worker_manager_can_stop_running_task():
     notification = _wait_for_notification(manager)
 
     assert "<status>killed</status>" in notification
+
+
+def test_worker_manager_defaults_to_coding_task_kind():
+    engine = _FakeEngine("complete")
+    manager = WorkerManager(build_worker_engine=lambda: engine)
+
+    launched = manager.spawn(description="Inspect", prompt="read the file")
+    notification = _wait_for_notification(manager)
+
+    assert launched["task_kind"] == "coding"
+    assert "<task-kind>coding</task-kind>" in notification
+    assert "Agent \"Inspect\" (coding) completed" in notification
+    assert engine.prompts == ["read the file"]
+
+
+def test_worker_manager_labels_research_tasks_in_prompts_and_notifications():
+    engine = _FakeEngine("complete")
+    manager = WorkerManager(build_worker_engine=lambda: engine)
+
+    launched = manager.spawn(
+        description="Research",
+        prompt="Review the release notes and summarize the scope.",
+        task_kind="research",
+    )
+    notification = _wait_for_notification(manager)
+
+    assert launched["task_kind"] == "research"
+    assert engine.prompts[0].startswith("This is a research task.")
+    assert "<task-kind>research</task-kind>" in notification
+    assert "Agent \"Research\" (research) completed" in notification

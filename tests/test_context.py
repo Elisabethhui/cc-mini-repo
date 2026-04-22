@@ -6,8 +6,8 @@ from core.context import build_system_prompt
 
 def test_build_system_prompt_contains_base_instructions():
     prompt = build_system_prompt(cwd="/tmp")
-    assert "Claude Code" in prompt
-    assert "AI assistant" in prompt
+    assert "interactive agent" in prompt
+    assert "software engineering tasks" in prompt
 
 
 def test_build_system_prompt_contains_date():
