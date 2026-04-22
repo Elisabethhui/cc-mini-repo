@@ -19,6 +19,7 @@ from .coordinator import (
     current_session_mode,
     match_session_mode,
 )
+from .wiki.closeout import CloseoutRecord, CloseoutStore
 
 if TYPE_CHECKING:
     from .compact import CompactService
@@ -48,6 +49,7 @@ class CommandContext:
     reconfigure_mode: object = None
     plan_manager: object = None
     pending_query: str | None = None  # set by commands that want a follow-up model query
+    pending_closeout: CloseoutRecord | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +441,128 @@ def _cmd_model(ctx: CommandContext, args: str) -> None:
         f"[green]✓[/green] Set model to [bold]{actual}[/bold]  "
         f"(max_tokens={default_max_tokens_for_model(actual, provider=provider)}, effort={eff})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Closeout helpers
+# ---------------------------------------------------------------------------
+
+def _closeout_task_id(ctx: CommandContext) -> str:
+    session_id = getattr(ctx.session_store, "session_id", None)
+    if session_id:
+        return str(session_id)
+    return Path.cwd().name
+
+
+def _closeout_store() -> CloseoutStore:
+    return CloseoutStore(Path.cwd())
+
+
+def _draft_closeout_record(ctx: CommandContext) -> CloseoutRecord:
+    return CloseoutRecord(
+        task_id=_closeout_task_id(ctx),
+        phase_name="Phase 6",
+        verification_status="pending",
+        review_status="pending",
+        commit_status="pending",
+        commit_hash=None,
+        ready_for_audit=False,
+        residual_risks=[
+            "Awaiting explicit /close confirm before commit",
+        ],
+    )
+
+
+def _closeout_has_blockers(record: CloseoutRecord) -> bool:
+    verification = record.verification_status.strip().lower()
+    review = record.review_status.strip().lower()
+    if verification in {"failed", "error", "blocked"}:
+        return True
+    return review in {"risky", "risk", "blocked", "warning", "needs_attention"}
+
+
+def _invoke_skill(ctx: CommandContext, name: str, args: str = "") -> bool:
+    from .skills import get_skill
+
+    skill = get_skill(name)
+    if skill is None:
+        ctx.console.print(f"[red]Unknown skill: /{name}[/red]")
+        return False
+    return _execute_skill(skill, args, ctx)
+
+
+def _cmd_close(ctx: CommandContext, args: str) -> None:
+    action = args.strip().split(None, 1)[0].lower() if args.strip() else ""
+
+    if action == "cancel":
+        if ctx.pending_closeout is None:
+            ctx.console.print("[dim]No pending closeout to cancel.[/dim]")
+            return
+        ctx.pending_closeout = None
+        ctx.pending_query = None
+        ctx.console.print("[green]✓[/green] Closeout canceled. No git mutation was made.")
+        return
+
+    if action == "confirm":
+        record = ctx.pending_closeout
+        if record is None:
+            record = _closeout_store().load_latest(task_id=_closeout_task_id(ctx))
+        if record is None:
+            ctx.console.print("[dim]No draft closeout found. Run /close first.[/dim]")
+            return
+
+        if record.commit_status == "recorded" and record.ready_for_audit:
+            ctx.console.print("[dim]Latest closeout is already finalized.[/dim]")
+            return
+
+        if _closeout_has_blockers(record):
+            ctx.console.print(
+                f"[yellow]Closeout blocked: verification={record.verification_status}, "
+                f"review={record.review_status}[/yellow]"
+            )
+            ctx.console.print("[dim]Resolve the failure or risk before confirming commit.[/dim]")
+            return
+
+        ctx.console.print("[dim]Running /test, /review, and /commit through the existing skill path…[/dim]")
+        _invoke_skill(ctx, "test", "")
+        _invoke_skill(ctx, "review", "")
+        _invoke_skill(ctx, "commit", "")
+
+        final_record = CloseoutRecord(
+            task_id=record.task_id,
+            phase_name=record.phase_name,
+            verification_status=record.verification_status,
+            review_status=record.review_status,
+            commit_status="recorded",
+            commit_hash=record.commit_hash,
+            ready_for_audit=True,
+            residual_risks=list(record.residual_risks),
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
+        saved = _closeout_store().save(final_record)
+        ctx.pending_closeout = None
+        ctx.pending_query = None
+        ctx.console.print(f"[green]✓[/green] Closeout finalized at {saved}")
+        return
+
+    record = _draft_closeout_record(ctx)
+    saved = _closeout_store().save(record)
+    ctx.pending_closeout = record
+    ctx.pending_query = "Confirm with /close confirm or cancel with /close cancel."
+    ctx.console.print(f"[green]✓[/green] Draft closeout saved at {saved}")
+    ctx.console.print("[dim]Confirm with /close confirm after you are ready to commit.[/dim]")
+
+
+def _cmd_milestone_review(ctx: CommandContext, args: str) -> None:
+    store = _closeout_store()
+    record = store.load_latest()
+    if record is None:
+        ctx.console.print("[dim]No closeout record found. Run /close first to create one.[/dim]")
+        return
+
+    ctx.console.print("[bold]Milestone Review[/bold]")
+    ctx.console.print(store.render_review_summary(record))
 
 
 # ---------------------------------------------------------------------------
@@ -984,6 +1108,8 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("task",     "Task intake for coding-adjacent or general requests [description]", _cmd_task),
     ("cost",    "Show token usage and cost summary",               _cmd_cost),
     ("model",   "Show or switch model [model-name]",               _cmd_model),
+    ("close",    "Draft a closeout record; confirm with /close confirm", _cmd_close),
+    ("milestone-review", "Read-only summary of the latest closeout record", _cmd_milestone_review),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
     ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),

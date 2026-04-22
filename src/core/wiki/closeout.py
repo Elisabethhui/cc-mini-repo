@@ -126,13 +126,26 @@ class CloseoutStore:
             f"{risk_lines}\n"
         )
 
+    def render_review_summary(self, record: CloseoutRecord) -> str:
+        risks = record.residual_risks or []
+        risk_lines = "\n".join(f"- {item}" for item in risks) if risks else "- None"
+        commit_hash = record.commit_hash or "None"
+        readiness = "Ready for audit" if record.ready_for_audit else "Not ready for audit"
+
+        return (
+            f"[bold]{readiness}[/bold]\n"
+            f"- Verification Status: {record.verification_status}\n"
+            f"- Review Status: {record.review_status}\n"
+            f"- Commit Status: {record.commit_status}\n"
+            f"- Commit Hash: `{commit_hash}`\n"
+            f"- Residual Risks:\n{risk_lines}"
+        )
+
     def _load_records(self, task_id: str | None = None) -> list[CloseoutRecord]:
         records: list[CloseoutRecord] = []
         for path in self.closeout_dir.glob("*.json"):
-            try:
-                record = CloseoutRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
-            except Exception:
-                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            record = CloseoutRecord.from_dict(data)
             if task_id is not None and record.task_id != task_id:
                 continue
             records.append(record)
