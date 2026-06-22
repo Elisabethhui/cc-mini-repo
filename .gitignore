@@ -34,3 +34,14 @@ memory-bank/
 scripts/
 manifests/
 docs/wiki/
+
+# AI development local state
+.ai-dev/tasks/
+.ai-dev/context-packs/
+.ai-dev/worklogs/
+.ai-dev/checkpoints/
+.ai-dev/tmp/
+
+# Local code intelligence indexes
+.codegraph/
+.codebase-memory/
