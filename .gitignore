@@ -45,3 +45,22 @@ docs/wiki/
 # Local code intelligence indexes
 .codegraph/
 .codebase-memory/
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# AI development local state
+.ai-dev/tasks/
+.ai-dev/context-packs/
+.ai-dev/worklogs/
+.ai-dev/checkpoints/
+.ai-dev/tmp/
+
+# Local code intelligence indexes
+.codegraph/
+.codebase-memory/
+__pycache__/
+*.py[cod]
+.pytest_cache/
