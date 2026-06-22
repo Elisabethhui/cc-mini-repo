@@ -7,7 +7,7 @@ description: Use when exploring code with a strict context budget. Prefer CodeGr
 
 ## Purpose
 
-Reduce token usage during code exploration by querying local code intelligence before reading files.
+Reduce token usage during code exploration by querying local code intelligence before reading source files.
 
 Use this skill before implementation, debugging, impact analysis, or test selection.
 
@@ -62,3 +62,30 @@ codegraph callers "<symbol>"
 codegraph callees "<symbol>"
 codegraph impact "<symbol>"
 git diff --name-only | codegraph affected --stdin --quiet
+```
+
+## Output
+
+When preparing code intelligence results for a task, summarize them with these sections:
+
+- `# Code Intelligence Summary`
+- `## Task`
+- `## Queries Run`
+- `## Relevant Files`
+- `## Relevant Symbols`
+- `## Callers / Callees`
+- `## Impact`
+- `## Affected Tests`
+- `## Still Needs Source Read`
+
+Keep the output short. Do not paste raw query dumps unless the exact lines are needed.
+
+## Stop Rules
+
+Stop and ask for task slicing if:
+
+- more than 5 files seem necessary
+- impact radius is broad
+- no clear target symbol is found
+- query results conflict with repository structure
+- the next step would require reading a large file without a target symbol
