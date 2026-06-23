@@ -30,6 +30,7 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/milestone-review" in output
     assert "/workflow-status" in output
     assert "/workflow-init" in output
+    assert "/workflow-doctor" in output
     assert "confirm with /close confirm" in output.lower()
     assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
@@ -149,3 +150,35 @@ def test_workflow_init_command_creates_missing_files_without_overwrite(tmp_path,
     assert ".ai-dev/WORKFLOW.md" in output
     assert existing.read_text(encoding="utf-8") == "keep me\n"
     assert (tmp_path / ".ai-dev" / "WORKFLOW.md").exists()
+
+
+def test_workflow_doctor_command_is_read_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("rules\n", encoding="utf-8")
+    (tmp_path / ".ai-dev" / "README.md").parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".ai-dev" / "README.md").write_text("readme\n", encoding="utf-8")
+    (tmp_path / ".ai-dev" / "WORKFLOW.md").write_text("workflow\n", encoding="utf-8")
+    (tmp_path / ".ai-dev" / "skills").mkdir()
+    (tmp_path / ".ai-dev" / "templates").mkdir()
+    (tmp_path / ".ai-dev" / "templates" / "CURRENT_TASK.md").write_text("# Task\n", encoding="utf-8")
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    handle_command("workflow-doctor", "", ctx)
+
+    output = console.file.getvalue()
+    assert "Context-Bounded Workflow Doctor" in output
+    assert "Required Files:" in output
+    assert "Local Artifacts:" in output
+    assert "Markdown:" in output
+    assert "CodeGraph:" in output
+    assert "Decision:" in output
+    assert not (tmp_path / ".codegraph").exists()
+    assert not (tmp_path / ".ai-dev" / "tasks").exists()

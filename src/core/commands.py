@@ -19,6 +19,7 @@ from .coordinator import (
     current_session_mode,
     match_session_mode,
 )
+from .workflow_doctor import collect_workflow_doctor_report, format_workflow_doctor_report
 from .workflow_init import format_workflow_init_result, init_workflow_scaffold
 from .workflow_status import collect_workflow_status, format_workflow_status
 from .wiki.closeout import CloseoutRecord, CloseoutStore
@@ -582,6 +583,15 @@ def _cmd_workflow_init(ctx: CommandContext, args: str) -> None:
     ctx.console.print(format_workflow_init_result(result))
 
 
+def _cmd_workflow_doctor(ctx: CommandContext, args: str) -> None:
+    if args.strip():
+        ctx.console.print("[dim]Usage: /workflow-doctor[/dim]")
+        return
+
+    report = collect_workflow_doctor_report(Path.cwd())
+    ctx.console.print(format_workflow_doctor_report(report))
+
+
 # ---------------------------------------------------------------------------
 # Command registry
 # ---------------------------------------------------------------------------
@@ -1129,6 +1139,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("milestone-review", "Read-only summary of the latest closeout record", _cmd_milestone_review),
     ("workflow-status", "Read-only workflow readiness status", _cmd_workflow_status),
     ("workflow-init", "Create missing workflow scaffold files [--dry-run]", _cmd_workflow_init),
+    ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
     ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),
