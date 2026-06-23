@@ -28,6 +28,7 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/maintenance" in output
     assert "/close" in output
     assert "/milestone-review" in output
+    assert "/workflow-status" in output
     assert "confirm with /close confirm" in output.lower()
     assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
@@ -77,3 +78,27 @@ def test_reconcile_and_maintenance_are_view_only(tmp_path, monkeypatch):
     assert "Maintenance Projection (view-only)" in output
     assert "derived" in output
     assert "manual" in output or "Manual artifacts" in output
+
+
+def test_workflow_status_command_is_read_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("rules\n", encoding="utf-8")
+    (tmp_path / ".ai-dev").mkdir()
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    handle_command("workflow-status", "", ctx)
+
+    output = console.file.getvalue()
+    assert "Workflow status:" in output
+    assert "Required Files:" in output
+    assert "CodeGraph:" in output
+    assert "Git:" in output
+    assert not (tmp_path / ".codegraph").exists()

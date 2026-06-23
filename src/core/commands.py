@@ -19,6 +19,7 @@ from .coordinator import (
     current_session_mode,
     match_session_mode,
 )
+from .workflow_status import collect_workflow_status, format_workflow_status
 from .wiki.closeout import CloseoutRecord, CloseoutStore
 
 if TYPE_CHECKING:
@@ -563,6 +564,11 @@ def _cmd_milestone_review(ctx: CommandContext, args: str) -> None:
 
     ctx.console.print("[bold]Milestone Review[/bold]")
     ctx.console.print(store.render_review_summary(record))
+
+
+def _cmd_workflow_status(ctx: CommandContext, args: str) -> None:
+    status = collect_workflow_status(Path.cwd())
+    ctx.console.print(format_workflow_status(status))
 
 
 # ---------------------------------------------------------------------------
@@ -1110,6 +1116,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("model",   "Show or switch model [model-name]",               _cmd_model),
     ("close",    "Draft a closeout record; confirm with /close confirm", _cmd_close),
     ("milestone-review", "Read-only summary of the latest closeout record", _cmd_milestone_review),
+    ("workflow-status", "Read-only workflow readiness status", _cmd_workflow_status),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
     ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),
