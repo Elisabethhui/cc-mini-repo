@@ -29,6 +29,7 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/close" in output
     assert "/milestone-review" in output
     assert "/workflow-status" in output
+    assert "/workflow-init" in output
     assert "confirm with /close confirm" in output.lower()
     assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
@@ -102,3 +103,49 @@ def test_workflow_status_command_is_read_only(tmp_path, monkeypatch):
     assert "CodeGraph:" in output
     assert "Git:" in output
     assert not (tmp_path / ".codegraph").exists()
+
+
+def test_workflow_init_command_supports_dry_run(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    handle_command("workflow-init", "--dry-run", ctx)
+
+    output = console.file.getvalue()
+    assert "Workflow init dry run" in output
+    assert ".ai-dev/README.md" in output
+    assert not (tmp_path / ".ai-dev").exists()
+
+
+def test_workflow_init_command_creates_missing_files_without_overwrite(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    existing = tmp_path / ".ai-dev" / "README.md"
+    existing.parent.mkdir(parents=True, exist_ok=True)
+    existing.write_text("keep me\n", encoding="utf-8")
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    handle_command("workflow-init", "", ctx)
+
+    output = console.file.getvalue()
+    assert "Workflow init" in output
+    assert "Skipped:" in output
+    assert ".ai-dev/README.md" in output
+    assert ".ai-dev/WORKFLOW.md" in output
+    assert existing.read_text(encoding="utf-8") == "keep me\n"
+    assert (tmp_path / ".ai-dev" / "WORKFLOW.md").exists()
