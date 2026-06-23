@@ -1,74 +1,34 @@
 # Context-Bounded Development Workflow
 
-This repository uses a small-context-friendly development workflow.
-
 ## Goal
 
-Make coding tasks:
-
-- small
-- code-intelligence guided
-- context-bounded
-- testable
-- reviewable
-- reversible
-- recoverable
-
-## File Boundary
-
-Committed workflow files:
-
-- `AGENTS.md`
-- `.ai-dev/README.md`
-- `.ai-dev/WORKFLOW.md`
-- `.ai-dev/templates/`
-- `.ai-dev/skills/`
-
-Ignored local task artifacts:
-
-- `.ai-dev/tasks/`
-- `.ai-dev/context-packs/`
-- `.ai-dev/worklogs/`
-- `.ai-dev/checkpoints/`
-- `.ai-dev/tmp/`
-
-Ignored code intelligence indexes:
-
-- `.codegraph/`
-- `.codebase-memory/`
+Make coding tasks small, code-intelligence guided, context-bounded, testable, reviewable, reversible, and recoverable.
 
 ## Workflow
 
-1. Slice the goal with `task-slicer`.
-2. Locate relevant code with `code-intel`.
-3. Build a task context with `context-pack`.
-4. Implement only the current task.
-5. Verify with `test-gate`.
-6. Review and decide with `review-rollback`.
-7. Record the result with `work-log`.
+1. Macro-plan large goals.
+2. Slice into one small task.
+3. Use surface-search to find anchors.
+4. Use code-intel to inspect precise code relationships.
+5. Build a context pack with context tiers.
+6. Implement only the current task.
+7. Run map-sync after code changes.
+8. Run test-gate.
+9. Run fresh-review or review-rollback.
+10. Record work-log.
 
 ## Context Modes
 
-For `32k` models:
+For 32k models: one behavior per task, up to 5 read files, up to 3 edit files, prefer snippets/signatures over full files, and stop if impact radius is broad.
 
-- one behavior per task
-- up to 5 read files
-- up to 3 edit files
-- prefer snippets over full files
-- stop if impact radius is broad
+Larger models may widen context, but testing, review, rollback, and file boundaries remain mandatory.
 
-For larger models:
+## Recovery
 
-- task size may grow slightly
-- testing, review, and rollback still remain mandatory
+To resume a future session, read in this order:
 
-## Code Intelligence
-
-Prefer small CodeGraph queries:
-
-```bash
-codegraph query "<keyword>"
-codegraph callers "<symbol>"
-codegraph callees "<symbol>"
-codegraph impact "<symbol>"
-git diff --name-only | codegraph affected --stdin --quiet
+1. `AGENTS.md`
+2. `.ai-dev/WORKFLOW.md`
+3. `.ai-dev/PROJECT_MAP.md`
+4. relevant local task/worklog if available
+5. `git status --short`

@@ -4,7 +4,7 @@
 task-000
 
 ## Goal
-One concrete behavior change.
+-
 
 ## Context Budget
 - model_context: 32k
@@ -22,6 +22,7 @@ One concrete behavior change.
 -
 
 ## Code Intelligence Needed
+- surface search:
 - symbol search:
 - callers:
 - callees:
@@ -33,13 +34,6 @@ One concrete behavior change.
 
 ## Test Plan
 -
-
-## Review Checklist
-- [ ] Stayed inside allowed files
-- [ ] No unrelated refactor
-- [ ] Tests or verification completed
-- [ ] Diff reviewed
-- [ ] Rollback path clear
 
 ## Rollback
 -

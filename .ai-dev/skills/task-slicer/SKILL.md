@@ -7,7 +7,7 @@ description: Split large coding goals into small, context-bounded, testable, rev
 
 ## Purpose
 
-Turn a large development goal into small tasks that can fit a limited model context.
+Turn a large development goal into small tasks that fit a limited model context.
 
 ## Default Budget
 
@@ -17,54 +17,18 @@ Turn a large development goal into small tasks that can fit a limited model cont
 
 ## Process
 
-1. Restate the large goal.
+1. Restate the goal.
 2. Identify the smallest useful milestone.
 3. Split the milestone into ordered tasks.
-4. For each task, define allowed read files.
-5. Define allowed edit files.
-6. Define code intelligence queries.
-7. Define the minimum test.
-8. Define rollback method.
-9. Stop before implementation.
+4. Define allowed read/edit files.
+5. Define minimum verification.
+6. Define rollback.
+7. Stop before implementation.
 
 ## Task Size Rules
 
-A task is too large if it:
-
-- needs more than 5 files of context
-- edits more than 3 files
-- mixes design, implementation, and refactor
-- cannot be tested
-- cannot be rolled back independently
+A task is too large if it needs more than 5 files, edits more than 3 files, mixes unrelated concerns, cannot be tested, or cannot be rolled back.
 
 ## Output Format
 
-```markdown
-### task-001: short name
-
-Goal:
--
-
-Allowed Read:
--
-
-Allowed Edit:
--
-
-Do Not Do:
--
-
-Code Intelligence:
--
-
-Acceptance:
--
-
-Tests:
--
-
-Rollback:
--
-
-Estimated Context:
-- 32k / 64k / 128k
+For each task include: goal, allowed read, allowed edit, do not do, code intelligence, acceptance, tests, rollback, dependencies, and estimated context.
