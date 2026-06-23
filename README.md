@@ -195,6 +195,9 @@ All tools inherit from `Tool` base class. Read-only tools are auto-approved; wri
 ## Slash Commands
 
 ### Core
+然后检查：
+
+```bash
 
 | Command | Description |
 |---------|-------------|
@@ -202,7 +205,7 @@ All tools inherit from `Tool` base class. Read-only tools are auto-approved; wri
 | `/compact` | Compress conversation context |
 | `/resume` | Resume a past session |
 | `/history` | List saved sessions |
-| `/clear` | Clear conversation, start new session |
+| `/clear` | Clear conversation, start new seqssion |
 | `/skills` | List all available skills |
 
 ### Buddy
@@ -314,3 +317,4 @@ python -m core.main
 ## License
 
 MIT
+
