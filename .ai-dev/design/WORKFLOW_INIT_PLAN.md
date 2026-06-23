@@ -4,7 +4,7 @@
 
 Plan the second product command in the context-bounded workflow feature:
 
-`cc-mini workflow init`
+`/workflow-init`
 
 This document is design-only. Do not implement from this file without creating a current task card first.
 
@@ -50,7 +50,7 @@ It should:
 ## Proposed User Experience
 
 ```bash
-cc-mini workflow init
+/workflow-init
 ```
 
 Expected behavior:
@@ -76,7 +76,7 @@ Will create missing files only.
 No product code will be changed.
 
 Next:
-  Run `cc-mini workflow status`
+  Run `/workflow-status`
 ```
 
 ## Required Files
@@ -154,6 +154,6 @@ Test cases:
 
 Create a task card:
 
-`task-027 implement workflow init scaffold writer`
+`Task 031 - workflow init core`
 
 Keep it limited to file creation helpers and tests first.

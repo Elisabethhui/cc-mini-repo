@@ -149,7 +149,7 @@ cat > .ai-dev/design/WORKFLOW_INIT_PLAN.md <<'EOF'
 
 Plan the second product command in the context-bounded workflow feature:
 
-`cc-mini workflow init`
+`/workflow-init`
 
 This document is design-only. Do not implement from this file without creating a current task card first.
 
@@ -195,7 +195,7 @@ It should:
 ## Proposed User Experience
 
 ```bash
-cc-mini workflow init
+/workflow-init
 ```
 
 Expected behavior:
@@ -221,7 +221,7 @@ Will create missing files only.
 No product code will be changed.
 
 Next:
-  Run `cc-mini workflow status`
+  Run `/workflow-status`
 ```
 
 ## Required Files
@@ -299,7 +299,7 @@ Test cases:
 
 Create a task card:
 
-`task-027 implement workflow init scaffold writer`
+`Task 031 - workflow init core`
 
 Keep it limited to file creation helpers and tests first.
 EOF
@@ -311,7 +311,7 @@ cat > .ai-dev/design/WORKFLOW_DOCTOR_PLAN.md <<'EOF'
 
 Plan a read-only diagnostic command:
 
-`cc-mini workflow doctor`
+`/workflow-doctor`
 
 Doctor should perform deeper checks than `workflow status`.
 
@@ -357,7 +357,7 @@ Doctor should check:
 ## Suggested Command
 
 ```bash
-cc-mini workflow doctor
+/workflow-doctor
 ```
 
 Output shape:
@@ -442,7 +442,7 @@ Test cases:
 
 Create task:
 
-`task-028 implement workflow doctor read-only checks`
+`Task 033 - workflow doctor core`
 
 Start with file boundary and markdown fence checks only.
 EOF
@@ -600,7 +600,7 @@ codegraph status
 
 Create task:
 
-`task-029 implement CodeIntel provider detection and query`
+`Task 035 - CodeIntel provider core`
 
 Keep command wiring for a later task.
 EOF
@@ -614,7 +614,7 @@ Plan a future product feature that generates local context packs from task and c
 
 Target future command:
 
-`cc-mini workflow pack`
+`/workflow-pack`
 
 ## Goal
 
@@ -680,7 +680,7 @@ Use context-tier-policy.
 ## Proposed Command
 
 ```bash
-cc-mini workflow pack .ai-dev/tasks/task-xxx.md
+/workflow-pack .ai-dev/tasks/task-xxx.md
 ```
 
 Possible output:
@@ -755,7 +755,7 @@ Test cases:
 
 Create task:
 
-`task-030 design minimal context pack generator data model`
+`Wait until after Task 035/036; implementation task should be assigned later.`
 
 Implementation should wait until CodeIntel provider exists.
 EOF

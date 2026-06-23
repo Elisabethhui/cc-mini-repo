@@ -150,6 +150,6 @@ codegraph status
 
 Create task:
 
-`task-029 implement CodeIntel provider detection and query`
+`Task 035 - CodeIntel provider core`
 
 Keep command wiring for a later task.

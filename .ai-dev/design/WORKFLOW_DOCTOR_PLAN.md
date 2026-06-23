@@ -4,7 +4,7 @@
 
 Plan a read-only diagnostic command:
 
-`cc-mini workflow doctor`
+`/workflow-doctor`
 
 Doctor should perform deeper checks than `workflow status`.
 
@@ -50,7 +50,7 @@ Doctor should check:
 ## Suggested Command
 
 ```bash
-cc-mini workflow doctor
+/workflow-doctor
 ```
 
 Output shape:
@@ -135,6 +135,6 @@ Test cases:
 
 Create task:
 
-`task-028 implement workflow doctor read-only checks`
+`Task 033 - workflow doctor core`
 
 Start with file boundary and markdown fence checks only.

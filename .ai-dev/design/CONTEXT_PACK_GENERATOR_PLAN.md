@@ -6,7 +6,7 @@ Plan a future product feature that generates local context packs from task and c
 
 Target future command:
 
-`cc-mini workflow pack`
+`/workflow-pack`
 
 ## Goal
 
@@ -72,7 +72,7 @@ Use context-tier-policy.
 ## Proposed Command
 
 ```bash
-cc-mini workflow pack .ai-dev/tasks/task-xxx.md
+/workflow-pack .ai-dev/tasks/task-xxx.md
 ```
 
 Possible output:
@@ -147,6 +147,6 @@ Test cases:
 
 Create task:
 
-`task-030 design minimal context pack generator data model`
+`Wait until after Task 035/036; implementation task should be assigned later.`
 
 Implementation should wait until CodeIntel provider exists.

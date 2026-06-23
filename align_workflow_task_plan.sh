@@ -1,0 +1,287 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "== Align context-bounded workflow task plan =="
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "ERROR: run this script inside a git work tree." >&2
+  exit 1
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if [ "$(pwd)" != "$repo_root" ]; then
+  echo "ERROR: failed to enter repository root: $repo_root" >&2
+  exit 1
+fi
+
+if [ ! -d ".ai-dev" ]; then
+  echo "ERROR: .ai-dev does not exist. Run the workflow task generation scripts first." >&2
+  exit 1
+fi
+
+required_files=(
+  "generate_task_026_030_files.sh"
+  ".ai-dev/design/WORKFLOW_INIT_PLAN.md"
+  ".ai-dev/design/WORKFLOW_DOCTOR_PLAN.md"
+  ".ai-dev/design/CODEINTEL_PROVIDER_IMPLEMENTATION_PLAN.md"
+  ".ai-dev/design/CONTEXT_PACK_GENERATOR_PLAN.md"
+)
+
+for path in "${required_files[@]}"; do
+  if [ ! -f "$path" ]; then
+    echo "ERROR: missing required file: $path" >&2
+    echo "Run: bash generate_task_026_030_files.sh" >&2
+    exit 1
+  fi
+done
+
+replace_literal() {
+  local file="$1"
+  local from="$2"
+  local to="$3"
+
+  FROM="$from" TO="$to" perl -0pi -e '
+    BEGIN {
+      $from = $ENV{"FROM"};
+      $to = $ENV{"TO"};
+    }
+    s/\Q$from\E/$to/g;
+  ' "$file"
+}
+
+align_file() {
+  local file="$1"
+
+  replace_literal "$file" "cc-mini workflow status" "/workflow-status"
+  replace_literal "$file" "cc-mini workflow init" "/workflow-init"
+  replace_literal "$file" "cc-mini workflow doctor" "/workflow-doctor"
+  replace_literal "$file" "cc-mini workflow pack" "/workflow-pack"
+  replace_literal "$file" "Run \`cc-mini workflow status\`" "Run \`/workflow-status\`"
+  replace_literal "$file" "\`task-027 implement workflow init scaffold writer\`" "\`Task 031 - workflow init core\`"
+  replace_literal "$file" "\`task-028 implement workflow doctor read-only checks\`" "\`Task 033 - workflow doctor core\`"
+  replace_literal "$file" "\`task-029 implement CodeIntel provider detection and query\`" "\`Task 035 - CodeIntel provider core\`"
+  replace_literal "$file" "\`task-030 design minimal context pack generator data model\`" "\`Wait until after Task 035/036; implementation task should be assigned later.\`"
+}
+
+align_file "generate_task_026_030_files.sh"
+align_file ".ai-dev/design/WORKFLOW_INIT_PLAN.md"
+align_file ".ai-dev/design/WORKFLOW_DOCTOR_PLAN.md"
+align_file ".ai-dev/design/CODEINTEL_PROVIDER_IMPLEMENTATION_PLAN.md"
+align_file ".ai-dev/design/CONTEXT_PACK_GENERATOR_PLAN.md"
+
+mkdir -p .ai-dev/tmp/deprecated-scripts
+if [ -f "generate_task_027_030_files.sh" ]; then
+  if git ls-files --error-unmatch "generate_task_027_030_files.sh" >/dev/null 2>&1; then
+    echo "WARN: generate_task_027_030_files.sh is tracked. Do not use it; remove it in a separate cleanup commit if desired."
+  else
+    stamp="$(date +%Y%m%d-%H%M%S)"
+    mv "generate_task_027_030_files.sh" ".ai-dev/tmp/deprecated-scripts/generate_task_027_030_files.sh.${stamp}"
+    echo "Moved duplicate temporary script to .ai-dev/tmp/deprecated-scripts/"
+  fi
+fi
+
+cat > .ai-dev/design/WORKFLOW_TASK_ALIGNMENT.md <<'EOF'
+# Workflow Task Alignment
+
+## Purpose
+
+This document is the canonical task-route agreement for the context-bounded workflow branch.
+
+Do not create a second task route unless this document is explicitly updated first.
+
+## Single Source Of Truth
+
+Use these generation scripts as the active route:
+
+- `generate_task_000_025_files.sh`
+- `generate_task_026_030_files.sh`
+- `generate_task_031_035_files.sh`
+- `generate_task_036_040_files.sh`
+- `generate_task_041_045_files.sh`
+- `generate_task_046_050_files.sh`
+- `run_stable_workflow_setup.sh`
+- `run_task_021_026_stable.sh`
+
+Do not use `generate_task_027_030_files.sh`. It overlaps with `generate_task_026_030_files.sh` and is considered deprecated.
+
+## Task Type Rules
+
+Not every task creates the same type of artifact.
+
+### Scaffold / Skill / Design Tasks
+
+Committed files may be created under:
+
+- `.ai-dev/skills/`
+- `.ai-dev/templates/`
+- `.ai-dev/design/`
+- `.ai-dev/README.md`
+- `.ai-dev/WORKFLOW.md`
+- `.ai-dev/PROJECT_MAP.md`
+- `.ai-dev/CODEGRAPH.md`
+- `.ai-dev/TESTING.md`
+
+### Runtime Execution Artifacts
+
+These are local-only by default and should not be committed unless explicitly requested:
+
+- `.ai-dev/tasks/`
+- `.ai-dev/context-packs/`
+- `.ai-dev/worklogs/`
+- `.ai-dev/checkpoints/`
+- `.ai-dev/tmp/`
+
+### Product Implementation Tasks
+
+Committed product changes belong in:
+
+- `src/`
+- `tests/`
+- user-facing docs when needed
+
+Product implementation tasks must include targeted tests.
+
+## Command Surface Decision
+
+Current v1 product commands are REPL slash commands, matching the existing `/workflow-status` implementation.
+
+Use these names for current implementation tasks:
+
+- `/workflow-status`
+- `/workflow-init`
+- `/workflow-doctor`
+- `/codeintel-status`
+- `/codeintel-query`
+
+External commands such as `cc-mini workflow status` may be considered future aliases, but they are not the current v1 acceptance target.
+
+## Canonical Route
+
+Completed:
+
+- Task 000-020: scaffold, skills, templates, initial workflow design
+- Task 021-026: first real workflow closeout and `/workflow-status`
+
+Current alignment:
+
+- Task 026-030: design and route planning, not product implementation
+
+Next implementation route:
+
+- Task 031: workflow init core
+- Task 032: workflow init command
+- Task 033: workflow doctor core
+- Task 034: workflow doctor command
+- Task 035: CodeIntel provider core
+- Task 036: CodeIntel commands
+
+Then:
+
+- Task 037: test selector core
+- Task 038: workflow test command
+- Task 039: review packet builder
+- Task 040: worklog generator
+- Task 041: rollback helper
+- Task 042: workflow next state
+
+Final convergence:
+
+- Task 043: wiki_strict boundary review
+- Task 044: prompt minimization review
+- Task 045: workflow docs update
+- Task 046: migration guide
+- Task 047: config defaults review
+- Task 048: end-to-end dry run
+- Task 049: final review
+- Task 050: merge plan
+
+## Scope Locks
+
+### Workflow Init v1
+
+Allowed:
+
+- create missing workflow scaffold files
+- avoid overwriting existing files
+- report created and skipped paths
+- stay independent of CodeGraph
+
+Not allowed:
+
+- task generation
+- context pack generation
+- test execution
+- CodeGraph initialization
+- git commit automation
+
+### Workflow Doctor v1
+
+Allowed:
+
+- read-only diagnostics
+- required workflow file checks
+- local artifact tracked/staged checks
+- simple Markdown code fence checks
+- CodeGraph availability warning
+
+Not allowed in v1:
+
+- automatic fixes
+- automatic secret removal
+- CodeGraph database inspection
+- expensive scans
+- file mutation
+
+### CodeIntel Provider v1
+
+Allowed:
+
+- detect CodeGraph availability
+- run compact status/query operations
+- fall back to precise `rg`
+- handle timeout and command failure
+
+Not allowed in v1:
+
+- full MCP client
+- daemon management
+- automatic context pack generation
+- automatic test selection
+
+### Context Pack Generator
+
+Keep as design until after Task 035/036.
+
+Do not implement context pack generation before the CodeIntel provider exists.
+
+## Review Rule
+
+Before starting each implementation task:
+
+1. Read this alignment file.
+2. Read the relevant design file.
+3. Create or use only the current task card/template.
+4. Modify only the allowed product files.
+5. Run targeted tests.
+6. Run closeout before commit.
+EOF
+
+echo
+echo "Alignment complete."
+echo
+echo "Changed files:"
+git status --short
+echo
+echo "Review with:"
+echo "  git diff -- .ai-dev/design/WORKFLOW_TASK_ALIGNMENT.md"
+echo "  git diff -- .ai-dev/design/WORKFLOW_INIT_PLAN.md"
+echo "  git diff -- .ai-dev/design/WORKFLOW_DOCTOR_PLAN.md"
+echo "  git diff -- .ai-dev/design/CODEINTEL_PROVIDER_IMPLEMENTATION_PLAN.md"
+echo "  git diff -- .ai-dev/design/CONTEXT_PACK_GENERATOR_PLAN.md"
+echo "  git diff -- generate_task_026_030_files.sh"
+echo
+echo "Commit with:"
+echo "  git add generate_task_026_030_files.sh .ai-dev/design/WORKFLOW_TASK_ALIGNMENT.md .ai-dev/design/WORKFLOW_INIT_PLAN.md .ai-dev/design/WORKFLOW_DOCTOR_PLAN.md .ai-dev/design/CODEINTEL_PROVIDER_IMPLEMENTATION_PLAN.md .ai-dev/design/CONTEXT_PACK_GENERATOR_PLAN.md"
+echo "  git commit -m \"Align workflow task route and command surface\""
