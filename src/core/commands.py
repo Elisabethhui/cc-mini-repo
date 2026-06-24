@@ -6,6 +6,7 @@ Modelled after claude-code's ``src/commands.ts``.
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,6 +20,7 @@ from .coordinator import (
     current_session_mode,
     match_session_mode,
 )
+from .test_selector import TestSelectionResult, format_test_selection_result, select_tests_for_changes
 from .workflow_doctor import collect_workflow_doctor_report, format_workflow_doctor_report
 from .workflow_init import format_workflow_init_result, init_workflow_scaffold
 from .workflow_status import collect_workflow_status, format_workflow_status
@@ -592,6 +594,53 @@ def _cmd_workflow_doctor(ctx: CommandContext, args: str) -> None:
     ctx.console.print(format_workflow_doctor_report(report))
 
 
+def _cmd_workflow_test(ctx: CommandContext, args: str) -> None:
+    changed_files, extra_warnings = _workflow_test_inputs(args)
+    result = select_tests_for_changes(Path.cwd(), changed_files)
+    if extra_warnings:
+        result = TestSelectionResult(
+            changed_files=result.changed_files,
+            recommendations=result.recommendations,
+            confidence=result.confidence,
+            warnings=extra_warnings + result.warnings,
+            truncated=result.truncated,
+        )
+    ctx.console.print(format_test_selection_result(result))
+
+
+def _workflow_test_inputs(args: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    explicit = tuple(part for part in args.split() if part)
+    if explicit:
+        return explicit, ()
+    return _changed_files_from_git_status(Path.cwd())
+
+
+def _changed_files_from_git_status(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    try:
+        proc = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=2.0,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return (), (f"git status unavailable: {exc}",)
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip() or f"git exited {proc.returncode}"
+        return (), (f"git status unavailable: {detail}",)
+    changed_files: list[str] = []
+    for line in proc.stdout.splitlines():
+        if not line.strip():
+            continue
+        payload = line[3:] if len(line) > 3 else line
+        if " -> " in payload:
+            payload = payload.split(" -> ", 1)[1]
+        changed_files.append(payload.strip())
+    return tuple(changed_files), ()
+
+
 # ---------------------------------------------------------------------------
 # Command registry
 # ---------------------------------------------------------------------------
@@ -1140,6 +1189,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-status", "Read-only workflow readiness status", _cmd_workflow_status),
     ("workflow-init", "Create missing workflow scaffold files [--dry-run]", _cmd_workflow_init),
     ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
+    ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
     ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),

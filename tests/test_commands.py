@@ -31,6 +31,7 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/workflow-status" in output
     assert "/workflow-init" in output
     assert "/workflow-doctor" in output
+    assert "/workflow-test" in output
     assert "confirm with /close confirm" in output.lower()
     assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
@@ -182,3 +183,75 @@ def test_workflow_doctor_command_is_read_only(tmp_path, monkeypatch):
     assert "Decision:" in output
     assert not (tmp_path / ".codegraph").exists()
     assert not (tmp_path / ".ai-dev" / "tasks").exists()
+
+
+def test_workflow_test_command_recommends_passed_files_without_running_tests(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    testing = tmp_path / ".ai-dev" / "TESTING.md"
+    testing.parent.mkdir(parents=True, exist_ok=True)
+    testing.write_text(
+        "# Testing Registry\n\n"
+        "- `src/core/commands.py` -> `tests/test_commands.py`\n",
+        encoding="utf-8",
+    )
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    run_calls: list[tuple[str, ...]] = []
+
+    def fake_run(*args, **kwargs):
+        run_calls.append(tuple(args[0]))
+        raise AssertionError("workflow-test should not execute pytest")
+
+    monkeypatch.setattr("core.commands.subprocess.run", fake_run)
+
+    handle_command("workflow-test", "src/core/commands.py", ctx)
+
+    output = console.file.getvalue()
+    assert "Test Selector" in output
+    assert "Confidence: medium" in output
+    assert "pytest tests/test_commands.py -v" in output
+    assert "Warnings:" in output
+    assert run_calls == []
+
+
+def test_workflow_test_command_uses_current_diff_read_only(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    testing = tmp_path / ".ai-dev" / "TESTING.md"
+    testing.parent.mkdir(parents=True, exist_ok=True)
+    testing.write_text(
+        "# Testing Registry\n\n"
+        "- `src/core/commands.py` -> `tests/test_commands.py`\n",
+        encoding="utf-8",
+    )
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    class Result:
+        returncode = 0
+        stdout = " M src/core/commands.py\n"
+        stderr = ""
+
+    monkeypatch.setattr("core.commands.subprocess.run", lambda *args, **kwargs: Result())
+
+    handle_command("workflow-test", "", ctx)
+
+    output = console.file.getvalue()
+    assert "Test Selector" in output
+    assert "pytest tests/test_commands.py -v" in output
+    assert "Confidence: medium" in output
+    assert "codeintel unavailable; using fallback rules" in output
