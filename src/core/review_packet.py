@@ -1,235 +1,188 @@
+"""Read-only review packet builder.
+
+Builds a compact review packet from task goal, git metadata, changed files,
+and test evidence.  Does not call an LLM and does not perform review.
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-import subprocess
+import re
+from dataclasses import dataclass, field
+from typing import Callable, Protocol
 
-from .workflow_status import IGNORED_LOCAL_PATHS
+# Paths that should trigger a risk flag if present in changed files
+_LOCAL_ARTIFACT_PREFIXES = (
+    ".ai-dev/tasks/",
+    ".ai-dev/context-packs/",
+    ".ai-dev/worklogs/",
+    ".ai-dev/checkpoints/",
+    ".ai-dev/tmp/",
+    ".codegraph/",
+    ".codebase-memory/",
+)
 
-
-DEFAULT_TIMEOUT_SECONDS = 2.0
-DEFAULT_MAX_CHANGED_FILES = 12
-DEFAULT_MAX_DIFF_CHARS = 1200
-DEFAULT_MAX_SUMMARY_CHARS = 400
-DEFAULT_MAX_WARNINGS = 6
-DEFAULT_MAX_RISKS = 6
-
-
-@dataclass(frozen=True)
-class GitCommandResult:
-    returncode: int
-    stdout: str
-    stderr: str = ""
+_MAX_DIFF_LINES_DEFAULT = 50
+_MAX_DIFF_BYTES_DEFAULT = 5_000
 
 
-@dataclass(frozen=True)
+class GitRunner(Protocol):
+    """Protocol for a callable that runs a git sub-command and returns stdout."""
+
+    def __call__(self, args: list[str]) -> str:
+        ...
+
+
+@dataclass
 class ReviewPacket:
+    """Compact review packet ready for human or LLM consumption."""
+
     task_goal: str
-    changed_files: tuple[str, ...]
-    diff_stat: tuple[str, ...]
-    test_summary: str
-    focused_diff: str
-    warnings: tuple[str, ...]
-    risks: tuple[str, ...]
+    changed_files: list[str] = field(default_factory=list)
+    diff_stat: str = ""
+    focused_diffs: dict[str, str] = field(default_factory=dict)
+    test_summary: str | None = None
     truncated: bool = False
+    local_artifact_flags: list[str] = field(default_factory=list)
+    risk_notes: list[str] = field(default_factory=list)
+
+
+def _run_git(git_runner: GitRunner | Callable[[list[str]], str], args: list[str]) -> str:
+    """Invoke *git_runner* and return stripped stdout, or empty string on failure."""
+    try:
+        return git_runner(args).strip()
+    except Exception:
+        return ""
+
+
+def _run_git_raw(git_runner: GitRunner | Callable[[list[str]], str], args: list[str]) -> str:
+    """Invoke *git_runner* and return raw stdout, or empty string on failure."""
+    try:
+        return git_runner(args)
+    except Exception:
+        return ""
+
+
+def _changed_files_from_stat(diff_stat: str) -> list[str]:
+    """Parse ``git diff --stat`` output for file names."""
+    files: list[str] = []
+    for line in diff_stat.splitlines():
+        line = line.rstrip()
+        if not line:
+            continue
+        # Typical line: " src/core/review_packet.py | 12 +---"
+        # Summary lines (e.g. " 2 files changed...") do not contain " | ".
+        parts = line.split(" | ", 1)
+        if len(parts) == 2:
+            files.append(parts[0].strip())
+    return files
+
+
+def _changed_files_from_status(status_output: str) -> list[str]:
+    """Parse ``git status --short`` output for file names."""
+    files: list[str] = []
+    for line in status_output.splitlines():
+        line = line.rstrip()
+        if not line:
+            continue
+        # Format: "XY filename" or "XY old -> new" (X/Y are status chars).
+        payload = line[3:] if len(line) > 3 else line
+        if " -> " in payload:
+            payload = payload.split(" -> ", 1)[1]
+        files.append(payload.strip())
+    return files
+
+
+def _is_local_artifact_path(path: str) -> bool:
+    """Return True if *path* lives under a known local-artifact directory."""
+    norm = path.replace("\\", "/")
+    return any(norm.startswith(prefix) or ("/" + prefix) in norm for prefix in _LOCAL_ARTIFACT_PREFIXES)
+
+
+def _truncate_diff(diff: str, *, max_lines: int, max_bytes: int) -> tuple[str, bool]:
+    """Return (possibly truncated diff, was_truncated)."""
+    encoded = diff.encode("utf-8")
+    if len(encoded) <= max_bytes and diff.count("\n") <= max_lines:
+        return diff, False
+
+    lines = diff.splitlines(keepends=True)
+    truncated_lines: list[str] = []
+    current_bytes = 0
+    for i, line in enumerate(lines):
+        line_bytes = line.encode("utf-8")
+        if i >= max_lines or current_bytes + len(line_bytes) > max_bytes:
+            return "".join(truncated_lines) + "... [truncated]\n", True
+        truncated_lines.append(line)
+        current_bytes += len(line_bytes)
+
+    return "".join(truncated_lines), False
 
 
 def build_review_packet(
-    root: Path,
-    *,
     task_goal: str,
-    test_summary: str,
-    focus_files: list[str] | tuple[str, ...] = (),
-    git_runner: object | None = None,
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-    max_changed_files: int = DEFAULT_MAX_CHANGED_FILES,
-    max_diff_chars: int = DEFAULT_MAX_DIFF_CHARS,
-) -> ReviewPacket:
-    root = root.resolve()
-    runner = git_runner or _run_git
-    warnings: list[str] = []
-    risks: list[str] = []
-    truncated = False
-
-    status_result = _safe_git(
-        runner,
-        root,
-        ["status", "--short"],
-        timeout_seconds=timeout_seconds,
-    )
-    status_lines = _split_nonempty_lines(status_result.stdout if status_result else "")
-    changed_files = _extract_changed_files(status_lines)
-    if len(changed_files) > max_changed_files:
-        changed_files = changed_files[:max_changed_files]
-        truncated = True
-
-    diff_stat_result = _safe_git(
-        runner,
-        root,
-        ["diff", "--stat"],
-        timeout_seconds=timeout_seconds,
-    )
-    diff_stat = _split_nonempty_lines(diff_stat_result.stdout if diff_stat_result else "")
-
-    target_files = tuple(focus_files) if focus_files else changed_files
-    focused_diff = ""
-    if target_files:
-        diff_result = _safe_git(
-            runner,
-            root,
-            ["diff", "--unified=0", "--no-ext-diff", "--", *target_files],
-            timeout_seconds=timeout_seconds,
-        )
-        if diff_result is not None:
-            focused_diff, diff_truncated = _truncate_text(diff_result.stdout, max_chars=max_diff_chars)
-            truncated = truncated or diff_truncated
-
-    if status_result is None:
-        warnings.append("git status unavailable")
-    if diff_stat_result is None:
-        warnings.append("git diff --stat unavailable")
-    elif not diff_stat:
-        warnings.append("diff stat is empty")
-    if not changed_files:
-        warnings.append("no changed files detected")
-
-    risks.extend(_local_artifact_risks(status_lines))
-    if focused_diff:
-        risks.extend(_sensitive_diff_risks(focused_diff))
-
-    compact_goal, goal_truncated = _truncate_text(task_goal.strip(), max_chars=DEFAULT_MAX_SUMMARY_CHARS)
-    compact_test_summary, test_truncated = _truncate_text(test_summary.strip(), max_chars=DEFAULT_MAX_SUMMARY_CHARS)
-    truncated = truncated or goal_truncated or test_truncated
-
-    return ReviewPacket(
-        task_goal=compact_goal,
-        changed_files=tuple(changed_files),
-        diff_stat=tuple(diff_stat),
-        test_summary=compact_test_summary,
-        focused_diff=focused_diff,
-        warnings=tuple(warnings[:DEFAULT_MAX_WARNINGS]),
-        risks=tuple(risks[:DEFAULT_MAX_RISKS]),
-        truncated=truncated,
-    )
-
-
-def format_review_packet(packet: ReviewPacket) -> str:
-    lines = [
-        "Review Packet",
-        "",
-        f"Task goal: {packet.task_goal or '(none)'}",
-        f"Changed files: {len(packet.changed_files)}",
-        f"Test summary: {packet.test_summary or '(none)'}",
-        "",
-        "Files:",
-    ]
-    if packet.changed_files:
-        lines.extend(f"- {path}" for path in packet.changed_files)
-    else:
-        lines.append("- (none)")
-    lines.extend(("", "Diff stat:"))
-    if packet.diff_stat:
-        lines.extend(f"- {line}" for line in packet.diff_stat)
-    else:
-        lines.append("- (none)")
-    if packet.focused_diff:
-        lines.extend(("", "Focused diff:", packet.focused_diff))
-    if packet.risks:
-        lines.extend(("", "Risks:"))
-        lines.extend(f"- {risk}" for risk in packet.risks)
-    if packet.warnings:
-        lines.extend(("", "Warnings:"))
-        lines.extend(f"- {warning}" for warning in packet.warnings)
-    if packet.truncated:
-        lines.extend(("", "Truncated: true"))
-    return "\n".join(lines).rstrip()
-
-
-def _run_git(root: Path, args: list[str], timeout_seconds: float) -> GitCommandResult:
-    proc = subprocess.run(
-        ["git", *args],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout_seconds,
-    )
-    return GitCommandResult(
-        returncode=proc.returncode,
-        stdout=proc.stdout,
-        stderr=proc.stderr,
-    )
-
-
-def _safe_git(
-    runner: object,
-    root: Path,
-    args: list[str],
+    git_runner: GitRunner | Callable[[list[str]], str],
     *,
-    timeout_seconds: float,
-) -> GitCommandResult | None:
-    try:
-        result = runner(root, args, timeout_seconds)  # type: ignore[misc]
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    return result
+    test_summary: str | None = None,
+    max_diff_lines: int = _MAX_DIFF_LINES_DEFAULT,
+    max_diff_bytes: int = _MAX_DIFF_BYTES_DEFAULT,
+    include_diff: bool = False,
+) -> ReviewPacket:
+    """Build a compact :class:`ReviewPacket`.
 
+    Parameters
+    ----------
+    task_goal:
+        Short description of what the task aimed to accomplish.
+    git_runner:
+        Callable that receives a list of git arguments (e.g. ``["diff", "--stat"]``)
+        and returns the command's stdout as a string.
+    test_summary:
+        Optional free-form summary of test results.
+    max_diff_lines:
+        Maximum number of diff lines to include per focused diff.
+    max_diff_bytes:
+        Maximum number of bytes to include per focused diff.
+    include_diff:
+        When False (default) only the diff stat and changed-file list are collected.
+        When True, a focused diff per changed file is also gathered and truncated
+        if necessary.
+    """
+    diff_stat = _run_git(git_runner, ["diff", "--stat"])
+    changed_files = _changed_files_from_stat(diff_stat)
 
-def _split_nonempty_lines(text: str) -> list[str]:
-    return [line.rstrip() for line in text.splitlines() if line.strip()]
+    # Fallback to status when diff --stat is empty (e.g. staged-only changes)
+    if not changed_files:
+        status = _run_git(git_runner, ["status", "--short"])
+        changed_files = _changed_files_from_status(status)
 
+    packet = ReviewPacket(
+        task_goal=task_goal,
+        changed_files=changed_files,
+        diff_stat=diff_stat,
+        test_summary=test_summary,
+    )
 
-def _extract_changed_files(status_lines: list[str]) -> list[str]:
-    changed_files: list[str] = []
-    seen: set[str] = set()
-    for line in status_lines:
-        payload = line[3:] if len(line) > 3 else line
-        if " -> " in payload:
-            payload = payload.split(" -> ", 1)[1]
-        path = payload.strip()
-        if path and path not in seen:
-            seen.add(path)
-            changed_files.append(path)
-    return changed_files
+    # Flag local artifact paths
+    for path in changed_files:
+        if _is_local_artifact_path(path):
+            packet.local_artifact_flags.append(path)
 
+    if packet.local_artifact_flags:
+        packet.risk_notes.append(
+            "Changed files include local artifact paths that should not be committed."
+        )
 
-def _local_artifact_risks(status_lines: list[str]) -> list[str]:
-    risks: list[str] = []
-    for line in status_lines:
-        payload = line[3:] if len(line) > 3 else line
-        if " -> " in payload:
-            payload = payload.split(" -> ", 1)[1]
-        path = payload.strip()
-        if not path:
-            continue
-        if _matches_prefix(path, IGNORED_LOCAL_PATHS):
-            risks.append(f"local artifact path visible in git status: {path}")
-        if "__pycache__" in path or path.endswith(".pyc"):
-            risks.append(f"cache artifact visible in git status: {path}")
-    return risks
+    # Gather focused diffs when requested
+    if include_diff and changed_files:
+        for path in changed_files:
+            raw = _run_git_raw(git_runner, ["diff", "--", path])
+            if not raw:
+                raw = _run_git_raw(git_runner, ["diff", "--staged", "--", path])
+            if raw:
+                trimmed, was_trunc = _truncate_diff(
+                    raw, max_lines=max_diff_lines, max_bytes=max_diff_bytes
+                )
+                packet.focused_diffs[path] = trimmed
+                if was_trunc:
+                    packet.truncated = True
 
-
-def _sensitive_diff_risks(diff_text: str) -> list[str]:
-    risks: list[str] = []
-    if "BEGIN PRIVATE KEY" in diff_text:
-        risks.append("focused diff may contain private key material")
-    if "password" in diff_text.lower():
-        risks.append("focused diff contains password-like text; review carefully")
-    return risks
-
-
-def _matches_prefix(path: str, prefixes: tuple[str, ...]) -> bool:
-    normalized = path.rstrip("/")
-    for prefix in prefixes:
-        clean_prefix = prefix.rstrip("/")
-        if normalized == clean_prefix or normalized.startswith(clean_prefix + "/"):
-            return True
-    return False
-
-
-def _truncate_text(text: str, *, max_chars: int) -> tuple[str, bool]:
-    if len(text) <= max_chars:
-        return text, False
-    return text[: max_chars - 1].rstrip() + "…", True
+    return packet
