@@ -23,7 +23,7 @@ Local task state belongs in ignored directories:
 - `.ai-dev/checkpoints/`
 - `.ai-dev/tmp/`
 
-Do not commit `.codegraph/` or `.codebase-memory/`.
+Do not commit `.codegraph/`, `.codebase-memory/`, or `CLAUDE.md` (all are gitignored).
 
 ## Code Reading Rules
 
@@ -35,6 +35,28 @@ Before reading large files:
 4. Use `rg` for exact search.
 5. Read small snippets.
 6. Read whole files only when necessary.
+
+## Development Commands
+
+- Install: `pip install -e ".[dev]"`
+- Run from source: `PYTHONPATH=src python -m core.main`
+- Run all tests: `pytest tests/ -v`
+- Skip integration/sandbox tests: `pytest tests/ -v -k "not integration"`
+- Run single test: `pytest tests/<file>.py::test_name -v`
+
+## Architecture & Scope
+
+- **Entry point**: `src/core/main.py` (installed as `cc-mini`)
+- **Engine**: `src/core/engine.py`
+- **Tools**: `src/core/tools/`
+- Two runtime modes: `standard` (default interactive REPL) and `wiki_strict` (structured workflow with AST-based reading).
+- **Phase 1 boundary**: The active product target is workspace bootstrap → scan → prime → structured planning output. Patch, post-edit, reconcile, archive, and maintenance are explicitly deferred to later phases. Do not treat later-phase code as the current active path unless the task is specifically to implement that phase.
+- In `wiki_strict`, `/reconcile` and `/maintenance` are view-only projections (no file mutations) even in later phases.
+
+## CI / Verification Gotchas
+
+- `.github/workflows/wiki-lint.yml` invokes `python3 scripts/wiki_check.py`, `scripts/raw_manifest_check.py`, and `scripts/untracked_raw_check.py`.
+- The `scripts/` directory is listed in `.gitignore` and does not exist in the repo. **These CI checks are currently non-functional.** Do not assume the scripts exist or try to create them unless the task explicitly requires fixing the CI workflow.
 
 ## Implementation Rules
 
