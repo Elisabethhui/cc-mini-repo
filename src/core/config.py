@@ -23,6 +23,7 @@ from .llm import (
     validate_provider,
 )
 from .local_model import detect_local_model_profile, LocalModelProfile, is_local_model
+from .runtime_profile import build_runtime_profile, RuntimeProfile
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ class AppConfig:
     auto_dream: bool = True
     config_paths: tuple[Path, ...] = ()
     local_profile: LocalModelProfile | None = None
+    runtime_profile: RuntimeProfile | None = None
 
 
 def resolve_model(model: str | None, provider: str = DEFAULT_PROVIDER) -> str:
@@ -218,6 +220,12 @@ def load_app_config(args: Namespace) -> AppConfig:
         local_profile=detect_local_model_profile(
             args.base_url or selected_env_values.get("base_url") or _file_value("base_url"),
             model,
+        ),
+        runtime_profile=build_runtime_profile(
+            provider=provider,
+            model=model,
+            base_url=args.base_url or selected_env_values.get("base_url") or _file_value("base_url"),
+            max_output_tokens=max_tokens,
         ),
     )
 

@@ -204,3 +204,36 @@ def test_load_app_config_detects_local_profile(tmp_path: Path, monkeypatch: pyte
     assert config.local_profile.kind == "mlx"
     assert config.local_profile.context_window == 32768
     assert config.max_tokens == 32000
+
+    # RuntimeProfile should also be built
+    assert config.runtime_profile is not None
+    assert config.runtime_profile.context_window == 32768
+    # Sanity check: output is capped so output + safety <= context_window
+    assert config.runtime_profile.max_output_tokens <= 32000
+    assert config.runtime_profile.max_output_tokens + config.runtime_profile.safety_margin_tokens <= 32768
+    assert config.runtime_profile.runtime_kind == "local_openai_compatible"
+    assert config.runtime_profile.available_input_tokens >= 0
+
+
+def test_load_app_config_builds_runtime_profile_for_cloud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("CC_MINI_MODEL", raising=False)
+    monkeypatch.delenv("CC_MINI_MAX_TOKENS", raising=False)
+
+    config_path = tmp_path / "cc-mini.toml"
+    config_path.write_text(
+        '[anthropic]\n'
+        'model = "claude-sonnet-4-6"\n',
+        encoding="utf-8",
+    )
+
+    config = load_app_config(_args(config=str(config_path)))
+
+    assert config.runtime_profile is not None
+    assert config.runtime_profile.provider == "anthropic"
+    assert config.runtime_profile.model == "claude-sonnet-4-6"
+    assert config.runtime_profile.context_window == 200_000
+    assert config.runtime_profile.max_output_tokens == 32_000
+    assert config.runtime_profile.runtime_kind == "anthropic"
+    assert config.runtime_profile.available_input_tokens > 0
