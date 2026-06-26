@@ -327,6 +327,12 @@ python -m core.main
 
 ---
 
+## Migration
+
+If you are upgrading from an earlier version that used `wiki_strict` with `.cc-mini/`, `memory-bank/`, or the full wiki lifecycle, see the migration guide:
+
+- [`docs/migration-context-bounded-workflow.md`](docs/migration-context-bounded-workflow.md)
+
 ## License
 
 MIT
