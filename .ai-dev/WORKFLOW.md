@@ -23,6 +23,19 @@ For 32k models: one behavior per task, up to 5 read files, up to 3 edit files, p
 
 Larger models may widen context, but testing, review, rollback, and file boundaries remain mandatory.
 
+## REPL Workflow Commands
+
+These read-only helpers are available inside the cc-mini REPL:
+
+- `/workflow-status` — workflow readiness check
+- `/workflow-init` — scaffold missing workflow files
+- `/workflow-doctor` — read-only diagnostics
+- `/workflow-test` — test recommendations from changed files
+
+They do not modify source files, run tests automatically, or commit changes.
+
+See `docs/workflow.md` for full user documentation.
+
 ## Recovery
 
 To resume a future session, read in this order:

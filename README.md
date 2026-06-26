@@ -93,6 +93,19 @@ The design target is to make the first successful path obvious and short:
 
 Patch, post-edit, and maintenance belong to later phases and are not part of the Phase 1 minimal startup path.
 
+### Workflow Helpers
+
+A set of read-only slash commands helps keep tasks bounded and recoverable:
+
+| Command | Description |
+|---------|-------------|
+| `/workflow-status` | Read-only workflow readiness status |
+| `/workflow-init` | Create missing workflow scaffold files `[--dry-run]` |
+| `/workflow-doctor` | Read-only workflow diagnostics |
+| `/workflow-test` | Read-only test recommendations from changed files |
+
+These commands do not modify source files, run tests automatically, or commit changes.  See `docs/workflow.md` for details.
+
 ---
 
 ## Configuration
