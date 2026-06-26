@@ -173,3 +173,34 @@ def test_resolve_run_mode_prefers_cli_choice_over_env(monkeypatch: pytest.Monkey
     monkeypatch.setenv("CC_MINI_MODE", "standard")
 
     assert resolve_run_mode("wiki_strict") == "wiki_strict"
+
+
+def test_default_max_tokens_for_local_model():
+    # Local models should lock to 32K
+    assert default_max_tokens_for_model("mymodel", provider="openai", base_url="http://localhost:1234") == 32000
+    assert default_max_tokens_for_model("mlx-community/Mistral-7B", provider="openai") == 32000
+    # Cloud OpenAI should not be affected
+    assert default_max_tokens_for_model("gpt-4.1", provider="openai", base_url="https://api.openai.com/v1") == 16384
+
+
+def test_load_app_config_detects_local_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    config_path = tmp_path / "cc-mini.toml"
+    config_path.write_text(
+        'provider = "openai"\n'
+        '[openai]\n'
+        'base_url = "http://127.0.0.1:1234/v1"\n'
+        'model = "mlx-community/Qwen2.5-7B-Instruct"\n',
+        encoding="utf-8",
+    )
+
+    config = load_app_config(_args(config=str(config_path)))
+
+    assert config.provider == "openai"
+    assert config.base_url == "http://127.0.0.1:1234/v1"
+    assert config.local_profile is not None
+    assert config.local_profile.kind == "mlx"
+    assert config.local_profile.context_window == 32768
+    assert config.max_tokens == 32000

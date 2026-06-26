@@ -117,10 +117,10 @@ These commands do not modify source files, run tests automatically, or commit ch
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `ANTHROPIC_BASE_URL` | Custom Anthropic gateway (optional) |
 | `OPENAI_API_KEY` | OpenAI-compatible API key |
-| `OPENAI_BASE_URL` | Custom OpenAI gateway URL |
+| `OPENAI_BASE_URL` | Custom OpenAI gateway URL (also used for local MLX/OMLX servers) |
 | `CC_MINI_PROVIDER` | `anthropic` or `openai` |
 | `CC_MINI_MODEL` | Model name (e.g. `claude-sonnet-4-6`) |
-| `CC_MINI_MAX_TOKENS` | Max output tokens |
+| `CC_MINI_MAX_TOKENS` | **Max output tokens** per response (not the full context window) |
 | `CC_MINI_EFFORT` | Reasoning effort: `low`, `medium`, `high` |
 | `CC_MINI_MODE` | `standard` or `wiki_strict` |
 | `CC_MINI_BUDDY_MODEL` | Model for companion reactions |
@@ -145,6 +145,24 @@ Loaded in order (later overrides earlier):
 
 1. `~/.config/cc-mini/config.toml`
 2. `.cc-mini.toml` in current working directory
+
+### Local Models (MLX / OMLX / OpenAI-Compatible)
+
+Local models use the `openai` provider with a custom `base_url`:
+
+```bash
+cc-mini \
+  --provider openai \
+  --base-url http://localhost:8080/v1 \
+  --model mlx-community/Mistral-7B-Instruct-v0.2-MLX \
+  --max-tokens 32000
+```
+
+- `--max-tokens` is the **output token budget**, not the full context window.
+- For 32K local models, `32000` is the safe default (leaves ~768 tokens for prompt overhead).
+- Use `/model-health` inside the REPL to verify your endpoint.
+
+See [`docs/local-models.md`](docs/local-models.md) for full setup, troubleshooting, and health-check details.
 
 ---
 

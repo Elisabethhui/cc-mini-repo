@@ -22,6 +22,7 @@ from .llm import (
     default_model_for_provider,
     validate_provider,
 )
+from .local_model import detect_local_model_profile, LocalModelProfile, is_local_model
 
 load_dotenv()
 
@@ -87,6 +88,7 @@ class AppConfig:
     dream_min_sessions: int = 5
     auto_dream: bool = True
     config_paths: tuple[Path, ...] = ()
+    local_profile: LocalModelProfile | None = None
 
 
 def resolve_model(model: str | None, provider: str = DEFAULT_PROVIDER) -> str:
@@ -102,12 +104,13 @@ def resolve_model(model: str | None, provider: str = DEFAULT_PROVIDER) -> str:
 def default_max_tokens_for_model(
     model: str | None,
     provider: str = DEFAULT_PROVIDER,
+    base_url: str | None = None,
 ) -> int:
     provider = validate_provider(provider)
     resolved = resolve_model(model, provider=provider)
-    
-    # [新增] 对本地模型/MLX小模型的限制进行强制锁死，保障本地 32K
-    if provider == "local" or (resolved and "mlx" in resolved.lower()):
+
+    # Local / MLX small-context models: lock to 32K output tokens
+    if is_local_model(base_url, resolved):
         return 32000
 
     if provider == "openai":
@@ -154,6 +157,8 @@ def load_app_config(args: Namespace) -> AppConfig:
     raw_model = args.model or env_values.get("model") or _file_value("model")
     model = resolve_model(raw_model, provider=provider)
 
+    base_url_value = args.base_url or selected_env_values.get("base_url") or _file_value("base_url")
+
     raw_max_tokens = (
         args.max_tokens
         if args.max_tokens is not None
@@ -161,7 +166,7 @@ def load_app_config(args: Namespace) -> AppConfig:
     )
     max_tokens = _parse_max_tokens(
         raw_max_tokens,
-        default=default_max_tokens_for_model(model, provider=provider),
+        default=default_max_tokens_for_model(model, provider=provider, base_url=base_url_value),
     )
 
     raw_effort = getattr(args, "effort", None)
@@ -210,6 +215,10 @@ def load_app_config(args: Namespace) -> AppConfig:
         dream_min_sessions=dream_min_sessions,
         auto_dream=auto_dream,
         config_paths=config_paths,
+        local_profile=detect_local_model_profile(
+            args.base_url or selected_env_values.get("base_url") or _file_value("base_url"),
+            model,
+        ),
     )
 
 def _load_file_values(explicit_path: str | None) -> tuple[dict[str, Any], tuple[Path, ...]]:

@@ -15,6 +15,7 @@ cc-mini includes a set of read-only workflow helpers that keep coding tasks smal
 | `/workflow-init --dry-run` | Preview what `/workflow-init` would create without writing files |
 | `/workflow-doctor` | Run read-only diagnostics: required files, local artifacts in git, markdown code fences, CodeGraph availability |
 | `/workflow-test` | Recommend tests based on changed files (uses CodeIntel when available, falls back to heuristics) |
+| `/model-health` | Check model endpoint health and show local model profile (read-only, 5s timeout) |
 
 ### Planned (not yet implemented)
 

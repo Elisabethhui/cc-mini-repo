@@ -255,3 +255,46 @@ def test_workflow_test_command_uses_current_diff_read_only(tmp_path, monkeypatch
     assert "pytest tests/test_commands.py -v" in output
     assert "Confidence: medium" in output
     assert "codeintel unavailable; using fallback rules" in output
+
+
+def test_model_health_command_is_read_only():
+    """/model-health should never execute real model requests in unit tests."""
+    from unittest.mock import patch
+
+    console = Console(file=StringIO())
+    app_config = MagicMock()
+    app_config.provider = "openai"
+    app_config.base_url = "http://localhost:1234"
+    app_config.api_key = None
+    app_config.model = "mymodel"
+    app_config.local_profile = None
+
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=app_config,
+    )
+
+    with patch("core.commands.check_model_health") as mock_check:
+        mock_check.return_value = MagicMock(
+            reachable=False,
+            provider="openai",
+            model="mymodel",
+            base_url="http://localhost:1234",
+            checks=(),
+            warnings=("Connection refused",),
+            errors=(),
+        )
+        handle_command("model-health", "", ctx)
+        mock_check.assert_called_once_with(
+            provider="openai",
+            base_url="http://localhost:1234",
+            api_key=None,
+            model="mymodel",
+            timeout=5.0,
+        )
+
+    output = console.file.getvalue()
+    assert "Model Health Check" in output or "Connection refused" in output

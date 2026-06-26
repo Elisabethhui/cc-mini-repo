@@ -24,6 +24,8 @@ from .test_selector import TestSelectionResult, format_test_selection_result, se
 from .workflow_doctor import collect_workflow_doctor_report, format_workflow_doctor_report
 from .workflow_init import format_workflow_init_result, init_workflow_scaffold
 from .workflow_status import collect_workflow_status, format_workflow_status
+from .model_health import check_model_health, format_model_health
+from .local_model import format_local_model_profile
 from .wiki.closeout import CloseoutRecord, CloseoutStore
 
 if TYPE_CHECKING:
@@ -592,6 +594,27 @@ def _cmd_workflow_doctor(ctx: CommandContext, args: str) -> None:
 
     report = collect_workflow_doctor_report(Path.cwd())
     ctx.console.print(format_workflow_doctor_report(report))
+
+
+def _cmd_model_health(ctx: CommandContext, args: str) -> None:
+    """Check the health of the current model endpoint."""
+    config = ctx.app_config
+    profile = getattr(config, "local_profile", None)
+
+    if profile:
+        ctx.console.print("[bold cyan]Local Model Profile[/bold cyan]")
+        ctx.console.print(format_local_model_profile(profile))
+        ctx.console.print("")
+
+    ctx.console.print("[bold cyan]Model Health Check[/bold cyan]")
+    result = check_model_health(
+        provider=config.provider,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        model=config.model,
+        timeout=5.0,
+    )
+    ctx.console.print(format_model_health(result))
 
 
 def _cmd_workflow_test(ctx: CommandContext, args: str) -> None:
@@ -1184,6 +1207,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("task",     "Task intake for coding-adjacent or general requests [description]", _cmd_task),
     ("cost",    "Show token usage and cost summary",               _cmd_cost),
     ("model",   "Show or switch model [model-name]",               _cmd_model),
+    ("model-health", "Check model endpoint health and local profile", _cmd_model_health),
     ("close",    "Draft a closeout record; confirm with /close confirm", _cmd_close),
     ("milestone-review", "Read-only summary of the latest closeout record", _cmd_milestone_review),
     ("workflow-status", "Read-only workflow readiness status", _cmd_workflow_status),
