@@ -712,7 +712,7 @@ def _cmd_workflow_pack(ctx: CommandContext, args: str) -> None:
 
 
 def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
-    """Dry-run a bounded batch execution plan."""
+    """Run a bounded batch execution plan (dry-run or supervised)."""
     from .batch_runner import BatchRunner
     from .context_pack import ContextPackBuilder
     from .plan_graph import PlanGraph
@@ -721,7 +721,7 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
 
     raw = args.strip()
     if not raw:
-        ctx.console.print("[dim]Usage: /workflow-run --dry-run <goal>[/dim]")
+        ctx.console.print("[dim]Usage: /workflow-run [--dry-run] <goal>[/dim]")
         return
 
     dry_run = False
@@ -730,7 +730,7 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
         raw = raw[len("--dry-run"):].strip()
 
     if not raw:
-        ctx.console.print("[dim]Usage: /workflow-run --dry-run <goal>[/dim]")
+        ctx.console.print("[dim]Usage: /workflow-run [--dry-run] <goal>[/dim]")
         return
 
     goal = raw
@@ -786,7 +786,62 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
     pack_path = packs_dir / f"{run_id}.md"
     pack_path.write_text(pack.markdown, encoding="utf-8")
 
-    # 6. Compute batch plan (dry-run: set up runner but don't execute workers)
+    # 6. Dry-run path
+    if dry_run:
+        runner = BatchRunner(
+            store,
+            max_steps=7,
+            context_window=32768,
+            reserved_output_tokens=2048,
+            safety_margin_tokens=1024,
+        )
+        state = store.load_state()
+        state["goal"] = goal
+        state["phase"] = "intake"
+        state["next_action"] = "Start intake"
+        store.save_state(state)
+
+        budget_report = runner._calculate_budget(state)
+
+        ctx.console.print(f"[green]✓[/green] Dry-run plan created: [bold]{run_id}[/bold]")
+        ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
+        ctx.console.print(f"[dim]  Phase: intake[/dim]")
+        ctx.console.print(f"[dim]  Next Action: Start intake[/dim]")
+        ctx.console.print("")
+        ctx.console.print(f"[dim]  Context Pack: {pack_path}[/dim]")
+        ctx.console.print(
+            f"[dim]  Tokens: {pack.budget_report.projected_total_tokens:,} / "
+            f"{pack.budget_report.context_window:,}[/dim]"
+        )
+        ctx.console.print(f"[dim]  Pack State: {pack.budget_report.state.value}[/dim]")
+        ctx.console.print("")
+        ctx.console.print(
+            f"[dim]  Budget: {budget_report.state.value} "
+            f"({budget_report.projected_total_tokens}/{budget_report.context_window})[/dim]"
+        )
+
+        if pack.warnings:
+            ctx.console.print("[yellow]Pack Warnings:[/yellow]")
+            for w in pack.warnings:
+                ctx.console.print(f"  • {w}")
+
+        if budget_report.warnings:
+            ctx.console.print("[yellow]Budget Warnings:[/yellow]")
+            for w in budget_report.warnings:
+                ctx.console.print(f"  • {w}")
+
+        ctx.console.print("")
+        ctx.console.print("[bold]Planned Phases:[/bold]")
+        phases = ["intake", "plan", "retrieve", "pack", "implement", "test", "review"]
+        for i, p in enumerate(phases, 1):
+            ctx.console.print(f"  {i}. {p}")
+        ctx.console.print("")
+        ctx.console.print("[dim]Run without --dry-run to execute.[/dim]")
+        return
+
+    # 7. Supervised execution path
+    engine = ctx.engine
+    engine.set_max_turns(1)
     runner = BatchRunner(
         store,
         max_steps=7,
@@ -794,50 +849,23 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
         reserved_output_tokens=2048,
         safety_margin_tokens=1024,
     )
-    # Initialise state the same way .run() does, but stop before the loop
-    state = store.load_state()
-    state["goal"] = goal
-    state["phase"] = "intake"
-    state["next_action"] = "Start intake"
-    store.save_state(state)
 
-    # Budget for the initial state
-    budget_report = runner._calculate_budget(state)
-
-    # 7. Output dry-run summary
-    ctx.console.print(f"[green]✓[/green] Dry-run plan created: [bold]{run_id}[/bold]")
-    ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
-    ctx.console.print(f"[dim]  Phase: intake[/dim]")
-    ctx.console.print(f"[dim]  Next Action: Start intake[/dim]")
-    ctx.console.print("")
-    ctx.console.print(f"[dim]  Context Pack: {pack_path}[/dim]")
-    ctx.console.print(
-        f"[dim]  Tokens: {pack.budget_report.projected_total_tokens:,} / "
-        f"{pack.budget_report.context_window:,}[/dim]"
+    ctx.console.print(f"[dim]Starting supervised execution: {run_id}[/dim]")
+    final = runner.run_supervised(
+        goal=goal,
+        engine=engine,
+        pack_builder=builder,
     )
-    ctx.console.print(f"[dim]  Pack State: {pack.budget_report.state.value}[/dim]")
-    ctx.console.print("")
-    ctx.console.print(f"[dim]  Budget: {budget_report.state.value} "
-                      f"({budget_report.projected_total_tokens}/{budget_report.context_window})[/dim]")
+    engine.set_max_turns(None)
 
-    if pack.warnings:
-        ctx.console.print("[yellow]Pack Warnings:[/yellow]")
-        for w in pack.warnings:
-            ctx.console.print(f"  • {w}")
-
-    if budget_report.warnings:
-        ctx.console.print("[yellow]Budget Warnings:[/yellow]")
-        for w in budget_report.warnings:
-            ctx.console.print(f"  • {w}")
-
-    # Show planned phases
-    ctx.console.print("")
-    ctx.console.print("[bold]Planned Phases:[/bold]")
-    phases = ["intake", "plan", "retrieve", "pack", "implement", "test", "review"]
-    for i, p in enumerate(phases, 1):
-        ctx.console.print(f"  {i}. {p}")
-    ctx.console.print("")
-    ctx.console.print("[dim]Run without --dry-run to execute.[/dim]")
+    ctx.console.print(
+        f"[green]✓[/green] Supervised execution complete: [bold]{run_id}[/bold]"
+    )
+    ctx.console.print(f"[dim]  Final phase: {final.get('phase')}[/dim]")
+    ctx.console.print(f"[dim]  Next action: {final.get('next_action')}[/dim]")
+    ctx.console.print(
+        f"[dim]  Step results: {len(store.list_artifacts())} artifacts[/dim]"
+    )
 
 
 def _workflow_test_inputs(args: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -1593,7 +1621,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
     ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
     ("workflow-pack", "Generate bounded context pack for a goal [goal|task-id]", _cmd_workflow_pack),
-    ("workflow-run", "Dry-run bounded batch execution plan [--dry-run] [goal]", _cmd_workflow_run),
+    ("workflow-run", "Run a bounded batch execution plan [--dry-run] [goal]", _cmd_workflow_run),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
     ("plan-status", "Show current planning phase and open items", _cmd_plan_status),

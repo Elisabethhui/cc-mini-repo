@@ -264,3 +264,45 @@ def test_engine_preflight_preserve_falls_back_when_compact_fails():
     # PRESERVE does not stop the engine, so the LLM call should still proceed
     text_events = [e for e in events if e[0] == "text"]
     assert any("hello" in e[1] for e in text_events)
+
+
+def test_engine_max_turns_limits_to_one_model_call():
+    """With max_turns=1, submit should stop after one model call even if tools are requested."""
+    engine = _make_engine()
+    streams = _make_tool_then_text_response("Echo", {"message": "world"}, "tu_1", "done")
+
+    engine.set_max_turns(1)
+    with patch.object(engine._client, "stream_messages", side_effect=streams) as mock_stream:
+        events = list(engine.submit("use the echo tool"))
+
+    # Only one API call should have been made
+    assert mock_stream.call_count == 1
+    tool_result_events = [e for e in events if e[0] == "tool_result"]
+    assert len(tool_result_events) == 1
+    assert tool_result_events[0][1] == "Echo"
+
+
+def test_engine_max_turns_one_with_text_only():
+    """max_turns=1 should not interfere when the model returns only text."""
+    engine = _make_engine()
+    engine.set_max_turns(1)
+    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
+        events = list(engine.submit("hi"))
+
+    text_events = [e for e in events if e[0] == "text"]
+    assert any("hello" in e[1] for e in text_events)
+
+
+def test_engine_max_turns_resets_each_submit():
+    """The turn counter should reset on every submit() call."""
+    engine = _make_engine()
+    engine.set_max_turns(1)
+
+    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("first")):
+        list(engine.submit("a"))
+
+    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("second")) as mock_stream:
+        list(engine.submit("b"))
+
+    # Both calls should succeed because counter resets each submit
+    assert mock_stream.call_count == 1

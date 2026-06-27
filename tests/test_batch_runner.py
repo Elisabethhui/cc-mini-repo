@@ -1,3 +1,5 @@
+import json
+
 from core.batch_runner import BatchRunner
 from core.context_budget import BudgetState
 from core.runtime_state import RuntimeStateStore
@@ -210,3 +212,157 @@ def test_step_logs_contain_budget_info(tmp_path):
         content = store.read_step_log(step_name.replace(".md", ""))
         assert "Budget:" in content
         assert "Goal:" in content
+
+
+def test_run_supervised_calls_engine_once_per_step(tmp_path):
+    """Each step in supervised mode should trigger exactly one model call."""
+    from unittest.mock import MagicMock, patch
+    from core.engine import Engine
+    from core.tools.base import Tool, ToolResult
+    from core.permissions import PermissionChecker
+    from core.context_pack import ContextPackBuilder
+
+    class NoopTool(Tool):
+        name = "Noop"
+        description = "Noop"
+        input_schema = {"type": "object", "properties": {}}
+
+        def execute(self) -> ToolResult:
+            return ToolResult(content="ok")
+
+    engine = Engine(
+        tools=[NoopTool()],
+        system_prompt="test",
+        permission_checker=PermissionChecker(auto_approve=True),
+        max_tokens=1000,
+        context_window=100_000,
+    )
+
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(return_value=stream)
+    stream.__exit__ = MagicMock(return_value=False)
+    stream.text_stream = iter(["step output"])
+    final_msg = MagicMock()
+    final_msg.content = [MagicMock(type="text", text="step output")]
+    stream.get_final_message = MagicMock(return_value=final_msg)
+
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=3, context_window=32768)
+    builder = ContextPackBuilder(context_window=32768)
+
+    with patch.object(engine._client, "stream_messages", return_value=stream) as mock_stream:
+        final = runner.run_supervised(
+            goal="Build feature X",
+            engine=engine,
+            pack_builder=builder,
+        )
+
+    # 3 steps => 3 model calls
+    assert mock_stream.call_count == 3
+    assert runner.step_count == 3
+    assert final["phase"] == "pack"  # intake -> plan -> retrieve -> pack
+
+
+def test_run_supervised_writes_step_result_artifacts(tmp_path):
+    """Supervised run should write a StepResult artifact for every step."""
+    from unittest.mock import MagicMock, patch
+    from core.engine import Engine
+    from core.tools.base import Tool, ToolResult
+    from core.permissions import PermissionChecker
+    from core.context_pack import ContextPackBuilder
+
+    class NoopTool(Tool):
+        name = "Noop"
+        description = "Noop"
+        input_schema = {"type": "object", "properties": {}}
+
+        def execute(self) -> ToolResult:
+            return ToolResult(content="ok")
+
+    engine = Engine(
+        tools=[NoopTool()],
+        system_prompt="test",
+        permission_checker=PermissionChecker(auto_approve=True),
+        max_tokens=1000,
+        context_window=100_000,
+    )
+
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(return_value=stream)
+    stream.__exit__ = MagicMock(return_value=False)
+    stream.text_stream = iter(["step output"])
+    final_msg = MagicMock()
+    final_msg.content = [MagicMock(type="text", text="step output")]
+    stream.get_final_message = MagicMock(return_value=final_msg)
+
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=2, context_window=32768)
+    builder = ContextPackBuilder(context_window=32768)
+
+    with patch.object(engine._client, "stream_messages", return_value=stream):
+        runner.run_supervised(
+            goal="Build feature X",
+            engine=engine,
+            pack_builder=builder,
+        )
+
+    artifacts = store.list_artifacts()
+    assert len(artifacts) == 2
+    assert all(a.startswith("step-result-") for a in artifacts)
+
+    for name in artifacts:
+        content = store.read_artifact(name)
+        data = json.loads(content)
+        assert "step_number" in data
+        assert "phase" in data
+        assert "assistant_text" in data
+        assert "tool_calls" in data
+
+
+def test_run_supervised_respects_budget_hard_stop(tmp_path):
+    """If the engine reports a hard-stop, the runner should transition to blocked."""
+    from unittest.mock import MagicMock, patch
+    from core.engine import Engine
+    from core.tools.base import Tool, ToolResult
+    from core.permissions import PermissionChecker
+    from core.context_pack import ContextPackBuilder
+
+    class NoopTool(Tool):
+        name = "Noop"
+        description = "Noop"
+        input_schema = {"type": "object", "properties": {}}
+
+        def execute(self) -> ToolResult:
+            return ToolResult(content="ok")
+
+    engine = Engine(
+        tools=[NoopTool()],
+        system_prompt="test",
+        permission_checker=PermissionChecker(auto_approve=True),
+        max_tokens=1000,
+        context_window=100_000,
+    )
+
+    # Simulate a hard-stop response (checkpoint text)
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(return_value=stream)
+    stream.__exit__ = MagicMock(return_value=False)
+    stream.text_stream = iter(["[checkpoint saved; run /resume-from-checkpoint]"])
+    final_msg = MagicMock()
+    final_msg.content = [MagicMock(type="text", text="[checkpoint saved; run /resume-from-checkpoint]")]
+    stream.get_final_message = MagicMock(return_value=final_msg)
+
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=3, context_window=32768)
+    builder = ContextPackBuilder(context_window=32768)
+
+    with patch.object(engine._client, "stream_messages", return_value=stream):
+        final = runner.run_supervised(
+            goal="Build feature X",
+            engine=engine,
+            pack_builder=builder,
+        )
+
+    # First step hits hard_stop -> blocked
+    assert final["phase"] == "blocked"
+    assert "hard_stop" in final["next_action"].lower() or "budget" in final["next_action"].lower()

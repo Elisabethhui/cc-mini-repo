@@ -303,3 +303,27 @@ def test_model_health_command_is_read_only():
 
     output = console.file.getvalue()
     assert "Model Health Check" in output or "Connection refused" in output
+
+
+def test_workflow_run_supervised_executes_without_dry_run(tmp_path, monkeypatch):
+    """/workflow-run <goal> without --dry-run should trigger supervised execution."""
+    from unittest.mock import patch
+
+    monkeypatch.chdir(tmp_path)
+
+    console = Console(file=StringIO())
+    ctx = CommandContext(
+        engine=MagicMock(),
+        session_store=MagicMock(),
+        compact_service=MagicMock(),
+        console=console,
+        app_config=MagicMock(),
+    )
+
+    with patch("core.batch_runner.BatchRunner.run_supervised") as mock_run:
+        mock_run.return_value = {"phase": "done", "next_action": "Task completed"}
+        handle_command("workflow-run", "Build feature X", ctx)
+
+    output = console.file.getvalue()
+    assert "supervised" in output.lower() or "complete" in output.lower()
+    mock_run.assert_called_once()

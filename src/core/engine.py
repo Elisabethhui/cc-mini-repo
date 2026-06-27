@@ -149,9 +149,14 @@ class Engine:
         self._current_skill_name: str | None = None
         self._compact_service = None
         self._preservation_pipeline: PreservationPipeline | None = None
+        self._max_turns: int | None = None
+        self._turn_counter: int = 0
 
     def set_preservation_pipeline(self, pipeline: PreservationPipeline) -> None:
         self._preservation_pipeline = pipeline
+
+    def set_max_turns(self, n: int | None) -> None:
+        self._max_turns = n
 
     def get_messages(self) -> list[dict]:
         return list(self._messages)
@@ -265,6 +270,7 @@ class Engine:
     def submit(self, user_input: str | list) -> Iterator[tuple]:
         self._aborted = False
         self._turn_start_len = len(self._messages)
+        self._turn_counter = 0
         self._messages.append({
             "role": "user",
             "content": _normalize_message_content(user_input),
@@ -273,6 +279,9 @@ class Engine:
 
         try:
             while True:
+                if self._max_turns is not None and self._turn_counter >= self._max_turns:
+                    break
+                self._turn_counter += 1
                 if self._aborted:
                     raise AbortedError()
 

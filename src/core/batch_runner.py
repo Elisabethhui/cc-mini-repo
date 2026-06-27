@@ -1,11 +1,36 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
+from typing import Any, Callable, TYPE_CHECKING
 
 from .context_budget import BudgetState, BudgetReport, ContextBudgetCalculator
 from .preservation import PreservationPipeline, _budget_report_to_dict
 from .runtime_state import RuntimeStateStore
+
+if TYPE_CHECKING:
+    from .engine import Engine
+    from .context_pack import ContextPackBuilder
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass
+class StepResult:
+    """Structured result of a single supervised execution step."""
+
+    step_number: int
+    phase: str
+    run_id: str
+    goal: str
+    assistant_text: str
+    tool_calls: list[dict]
+    budget_state: str
+    next_action: str
+    timestamp: str
 
 
 class BatchRunner:
@@ -111,6 +136,120 @@ class BatchRunner:
             self.store.save_state(state)
 
         return state
+
+    def run_supervised(
+        self,
+        goal: str,
+        engine: "Engine",
+        pack_builder: "ContextPackBuilder",
+    ) -> dict[str, Any]:
+        """Run supervised execution: one context pack + one model call per step.
+
+        Each step builds a fresh context pack, calls the engine with
+        ``max_turns=1``, records tool calls/results, writes a StepResult
+        artifact, and transitions phase.
+        """
+        engine.set_max_turns(1)
+
+        def _make_worker(phase: str) -> Callable[[dict[str, Any]], None]:
+            def worker(state: dict[str, Any]) -> None:
+                # Load latest PlanGraph if available
+                plan_graph = None
+                try:
+                    plan_path = self.store.base_dir / "plan-graph.json"
+                    if plan_path.exists():
+                        from .plan_graph import PlanGraph
+
+                        plan_graph = PlanGraph.from_json(
+                            plan_path.read_text(encoding="utf-8")
+                        )
+                except Exception:
+                    pass
+
+                # Build context pack for this step
+                pack = pack_builder.build(
+                    goal=goal,
+                    plan_graph=plan_graph,
+                    retrieval_results=state.get("retrieval_results", []),
+                    runtime_state=state,
+                    store=self.store,
+                )
+
+                # Fresh message window for this step
+                engine.set_messages([])
+
+                # Single engine turn (max_turns=1 prevents follow-up loops)
+                events = list(engine.submit(pack.markdown))
+
+                # Collect assistant text and tool results
+                assistant_text = "".join(
+                    e[1] for e in events if e[0] == "text" and len(e) > 1
+                )
+                tool_calls: list[dict] = []
+                for e in events:
+                    if e[0] == "tool_result":
+                        tool_calls.append(
+                            {
+                                "tool_name": e[1],
+                                "tool_input": e[2],
+                                "result": e[3].content,
+                                "is_error": e[3].is_error,
+                            }
+                        )
+
+                # Detect hard-stop from engine budget protection
+                budget_state = "ok"
+                for e in events:
+                    if (
+                        e[0] == "text"
+                        and len(e) > 1
+                        and "checkpoint" in e[1].lower()
+                    ):
+                        budget_state = "hard_stop"
+                        break
+
+                # Write structured StepResult artifact
+                step_result = StepResult(
+                    step_number=self.step_count,
+                    phase=phase,
+                    run_id=self.store.run_id,
+                    goal=goal,
+                    assistant_text=assistant_text,
+                    tool_calls=tool_calls,
+                    budget_state=budget_state,
+                    next_action=state.get("next_action", ""),
+                    timestamp=_now_iso(),
+                )
+                self.store.write_artifact(
+                    f"step-result-{self.step_count:03d}.json",
+                    json.dumps(asdict(step_result), ensure_ascii=False, indent=2),
+                )
+
+                # Keep runtime state lean: only store artifact reference
+                state["last_step_result"] = f"step-result-{self.step_count:03d}.json"
+
+                # If engine hit hard-stop, block further progress
+                if budget_state == "hard_stop":
+                    state["phase"] = "blocked"
+                    state["next_action"] = (
+                        "Hard stop: context budget exceeded during model call"
+                    )
+
+            return worker
+
+        workers = {
+            phase: _make_worker(phase)
+            for phase in (
+                "intake",
+                "plan",
+                "retrieve",
+                "pack",
+                "implement",
+                "test",
+                "review",
+            )
+        }
+        return self.run(goal, workers=workers)
 
     # ------------------------------------------------------------------
     # Internal helpers
