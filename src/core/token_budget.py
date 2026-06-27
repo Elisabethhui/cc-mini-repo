@@ -15,12 +15,12 @@ class BudgetState(str, Enum):
 
 @dataclass
 class BudgetThresholds:
-    # 针对 32K 模型的保守设置，预留 8K 用于模型输出和安全缓冲
+    # Configurable thresholds — no hard-coded 32K assumption.
     soft_limit: int = 16_000      # 触发脱水
     compact_limit: int = 20_000   # 触发摘要压缩
     checkpoint_limit: int = 24_000 # 触发快照截断
     hard_stop_limit: int = 26_000 # 绝对死线
-    max_context: int = 32_768
+    max_context: int = 0          # 由调用方显式传入，0 表示"未设置"
 
 @dataclass
 class BudgetDecision:
