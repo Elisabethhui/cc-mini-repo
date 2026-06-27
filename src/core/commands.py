@@ -631,6 +631,86 @@ def _cmd_workflow_test(ctx: CommandContext, args: str) -> None:
     ctx.console.print(format_test_selection_result(result))
 
 
+def _cmd_workflow_pack(ctx: CommandContext, args: str) -> None:
+    """Generate a bounded context pack for a goal or task-id."""
+    from .context_pack import ContextPackBuilder
+    from .plan_graph import PlanGraph
+    from .code_retrieval import CodeGraphRetrievalAdapter
+    from .runtime_state import RuntimeStateStore, _generate_run_id
+
+    goal = args.strip()
+    if not goal:
+        ctx.console.print("[dim]Usage: /workflow-pack <goal or task-id>[/dim]")
+        return
+
+    workspace = Path.cwd()
+
+    # Try to load latest PlanGraph
+    plan_graph = None
+    runtime_dir = workspace / ".ai-dev" / "runtime"
+    if runtime_dir.exists():
+        run_dirs = sorted(
+            (p for p in runtime_dir.iterdir() if p.is_dir()),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+        if run_dirs:
+            latest_run = run_dirs[0]
+            plan_path = latest_run / "plan-graph.json"
+            if plan_path.exists():
+                try:
+                    plan_graph = PlanGraph.from_json(plan_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass  # ignore corrupted plan graph
+
+    # Try code retrieval if code exists
+    retrieval_results = []
+    has_code = (workspace / ".codegraph").exists() or (workspace / "src").exists()
+    if has_code:
+        adapter = CodeGraphRetrievalAdapter(workspace)
+        # Query symbols related to the goal (simple heuristic: first word)
+        keyword = goal.split()[0] if goal.split() else goal
+        result = adapter.query_symbols(keyword)
+        retrieval_results.append(result)
+        # Also do a fallback rg query on the full goal
+        fallback = adapter.fallback_rg(goal[:50])
+        retrieval_results.append(fallback)
+
+    # Build pack
+    builder = ContextPackBuilder(
+        context_window=32768,
+        reserved_output_tokens=2048,
+        safety_margin_tokens=1024,
+    )
+    pack = builder.build(
+        goal=goal,
+        plan_graph=plan_graph,
+        retrieval_results=retrieval_results,
+    )
+
+    # Save to .ai-dev/context-packs/<run-id>.md
+    packs_dir = workspace / ".ai-dev" / "context-packs"
+    packs_dir.mkdir(parents=True, exist_ok=True)
+
+    run_id = plan_graph.run_id if plan_graph else _generate_run_id()
+    pack_path = packs_dir / f"{run_id}.md"
+    pack_path.write_text(pack.markdown, encoding="utf-8")
+
+    # Output
+    ctx.console.print(f"[green]✓[/green] Context pack generated: [bold]{pack_path}[/bold]")
+    ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
+    ctx.console.print(f"[dim]  Tokens: {pack.budget_report.projected_total_tokens:,} / {pack.budget_report.context_window:,}[/dim]")
+    ctx.console.print(f"[dim]  State: {pack.budget_report.state.value}[/dim]")
+    if pack.warnings:
+        ctx.console.print("[yellow]Warnings:[/yellow]")
+        for w in pack.warnings:
+            ctx.console.print(f"  • {w}")
+    if pack.artifact_handles:
+        ctx.console.print("[dim]Externalized:[/dim]")
+        for h in pack.artifact_handles:
+            ctx.console.print(f"  • {h}")
+
+
 def _workflow_test_inputs(args: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     explicit = tuple(part for part in args.split() if part)
     if explicit:
@@ -1383,6 +1463,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-init", "Create missing workflow scaffold files [--dry-run]", _cmd_workflow_init),
     ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
     ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
+    ("workflow-pack", "Generate bounded context pack for a goal [goal|task-id]", _cmd_workflow_pack),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
     ("plan-status", "Show current planning phase and open items", _cmd_plan_status),

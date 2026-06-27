@@ -35,6 +35,7 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/workflow-init" in output
     assert "/workflow-doctor" in output
     assert "/workflow-test" in output
+    assert "/workflow-pack" in output
     assert "confirm with /close confirm" in output.lower()
     assert "read-only" in output.lower()
     assert "Legacy /init_build (later-phase, not Phase 1)" in output
