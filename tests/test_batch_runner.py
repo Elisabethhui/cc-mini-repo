@@ -14,6 +14,11 @@ def test_basic_run_reaches_done(tmp_path):
     def worker(state):
         called.append(state.get("phase"))
 
+    def review_worker(state):
+        called.append(state.get("phase"))
+        # Review gate requires an explicit decision to reach done
+        state["review_decision"] = "commit"
+
     final = runner.run("Build feature X", workers={
         "intake": worker,
         "plan": worker,
@@ -21,7 +26,7 @@ def test_basic_run_reaches_done(tmp_path):
         "pack": worker,
         "implement": worker,
         "test": worker,
-        "review": worker,
+        "review": review_worker,
     })
 
     assert final["phase"] == "done"
@@ -93,7 +98,10 @@ def test_next_action_is_updated_every_step(tmp_path):
     store = RuntimeStateStore(str(tmp_path), run_id="test")
     runner = BatchRunner(store, max_steps=7, context_window=32768)
 
-    runner.run("Build feature X")
+    def review_worker(state):
+        state["review_decision"] = "commit"
+
+    runner.run("Build feature X", workers={"review": review_worker})
 
     state = store.load_state()
     assert state["next_action"] == "Task completed"
@@ -485,3 +493,100 @@ def test_resume_supervised_returns_terminal_state_without_calling_model(tmp_path
 
     mock_stream.assert_not_called()
     assert final["phase"] == "blocked"
+
+
+def test_test_gate_failing_tests_goto_revise(tmp_path):
+    """Test gate should route to revise when tests fail."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._test_gate({"test_decision": "failed"})
+    assert next_phase == "revise"
+    assert "revise" in next_action.lower()
+
+
+def test_test_gate_failure_flag_goto_revise(tmp_path):
+    """Test gate should route to revise when test_failure flag is set."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._test_gate({"test_failure": True})
+    assert next_phase == "revise"
+
+
+def test_test_gate_passing_goto_review(tmp_path):
+    """Test gate should proceed to review when tests pass."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._test_gate({})
+    assert next_phase == "review"
+    assert "review" in next_action.lower()
+
+
+def test_review_gate_commit_goto_done(tmp_path):
+    """Review gate should allow done when decision is commit."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "commit"})
+    assert next_phase == "done"
+    assert "completed" in next_action.lower()
+
+
+def test_review_gate_revise_blocked(tmp_path):
+    """Review gate should block when decision is revise."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "revise"})
+    assert next_phase == "blocked"
+    assert "revise" in next_action.lower()
+
+
+def test_review_gate_rollback_blocked(tmp_path):
+    """Review gate should block when decision is rollback."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "rollback"})
+    assert next_phase == "blocked"
+    assert "rollback" in next_action.lower()
+
+
+def test_review_gate_hold_blocked(tmp_path):
+    """Review gate should block when decision is hold."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "hold"})
+    assert next_phase == "blocked"
+    assert "hold" in next_action.lower()
+
+
+def test_review_gate_split_returns_to_plan(tmp_path):
+    """Review gate should return to plan when decision is split."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "split"})
+    assert next_phase == "plan"
+    assert "planning" in next_action.lower()
+
+
+def test_review_gate_reslice_returns_to_plan(tmp_path):
+    """Review gate should return to plan when decision is reslice."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({"review_decision": "reslice"})
+    assert next_phase == "plan"
+
+
+def test_review_gate_no_decision_blocked(tmp_path):
+    """Review gate should block when no review decision is recorded."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    next_phase, next_action = runner._review_gate({})
+    assert next_phase == "blocked"
+    assert "incomplete" in next_action.lower()
+
+
+def test_review_gate_prevents_auto_done_in_run(tmp_path):
+    """Without explicit review_decision, runner should not reach done."""
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    runner = BatchRunner(store, max_steps=10, context_window=32768)
+    final = runner.run("Build feature X")
+    assert final["phase"] == "blocked"
+    assert "incomplete" in final["next_action"].lower()

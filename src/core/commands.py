@@ -867,6 +867,86 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
         f"[dim]  Step results: {len(store.list_artifacts())} artifacts[/dim]"
     )
 
+    # 8. Workflow gates
+    _print_workflow_gates(ctx, workspace, run_id, goal, final)
+
+
+def _print_workflow_gates(
+    ctx: CommandContext,
+    workspace: Path,
+    run_id: str,
+    goal: str,
+    final_state: dict[str, Any],
+) -> None:
+    """Run and display workflow gates after execution."""
+    from .review_packet import build_review_packet
+    from .rollback_helper import collect_rollback_report, format_rollback_report
+    from .work_log import build_work_log_entry, write_work_log
+    from .workflow_next import WorkflowTaskArtifacts, recommend_workflow_next, format_workflow_next
+    from .workflow_status import collect_workflow_status
+    from .workflow_doctor import collect_workflow_doctor_report
+
+    ctx.console.print("")
+    ctx.console.print("[bold]Workflow Gates[/bold]")
+
+    # Test selector
+    changed_files, _ = _changed_files_from_git_status(workspace)
+    test_result = select_tests_for_changes(workspace, changed_files)
+    ctx.console.print(format_test_selection_result(test_result))
+
+    # Review packet
+    def _git_runner(args: list[str]) -> str:
+        try:
+            proc = subprocess.run(
+                ["git", *args],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=2.0,
+            )
+            return proc.stdout
+        except Exception:
+            return ""
+
+    review_pkt = build_review_packet(goal, _git_runner)
+    if review_pkt.changed_files:
+        ctx.console.print(f"\nReview Packet: {len(review_pkt.changed_files)} files changed")
+        if review_pkt.risk_notes:
+            ctx.console.print("[yellow]Risk notes:[/yellow]")
+            for note in review_pkt.risk_notes:
+                ctx.console.print(f"  • {note}")
+
+    # Rollback helper
+    rollback = collect_rollback_report(workspace)
+    ctx.console.print(f"\n{format_rollback_report(rollback)}")
+
+    # Work log
+    entry = build_work_log_entry(
+        task_id=run_id,
+        goal=goal,
+        changed_files=review_pkt.changed_files,
+        tests=[r.command for r in test_result.recommendations],
+        review_result=final_state.get("review_decision", ""),
+        risks=review_pkt.risk_notes,
+        next_step=final_state.get("next_action", ""),
+    )
+    write_work_log(workspace, entry)
+    ctx.console.print("\n[dim]Work log written.[/dim]")
+
+    # Workflow next
+    status = collect_workflow_status(workspace)
+    doctor = collect_workflow_doctor_report(workspace)
+    artifacts = WorkflowTaskArtifacts(
+        task_goal=goal,
+        tests_recorded=len(test_result.recommendations) > 0,
+        fresh_review_done=final_state.get("phase") in ("done", "review"),
+        review_decision=final_state.get("review_decision", ""),
+        work_log_written=True,
+    )
+    next_rec = recommend_workflow_next(status=status, doctor=doctor, artifacts=artifacts)
+    ctx.console.print(f"\n{format_workflow_next(next_rec)}")
+
 
 def _cmd_workflow_resume(ctx: CommandContext, args: str) -> None:
     """Resume a bounded workflow run from saved runtime state."""

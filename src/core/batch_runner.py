@@ -361,16 +361,55 @@ class BatchRunner:
         if overridden_phase != phase:
             return overridden_phase, state.get("next_action", "Continue")
 
+        if phase == "test":
+            return self._test_gate(state)
+        if phase == "review":
+            return self._review_gate(state)
+
         transitions: dict[str, tuple[str, str]] = {
             "intake": ("plan", "Plan the implementation"),
             "plan": ("retrieve", "Retrieve relevant code"),
             "retrieve": ("pack", "Build context pack"),
             "pack": ("implement", "Implement the changes"),
             "implement": ("test", "Run tests"),
-            "test": ("review", "Review changes"),
-            "review": ("done", "Task completed"),
+            "revise": ("implement", "Revise implementation"),
         }
         return transitions.get(phase, ("blocked", f"Unknown phase: {phase}"))
+
+    def _test_gate(self, state: dict[str, Any]) -> tuple[str, str]:
+        """Gate after test phase.
+
+        If test evidence indicates failure, return to revise.
+        Otherwise proceed to review.
+        """
+        test_decision = state.get("test_decision", "").lower().strip()
+        if test_decision in {"fail", "failed", "failing"}:
+            return "revise", "Tests failed; revise implementation"
+        if state.get("test_failure"):
+            return "revise", "Tests failed; revise implementation"
+        return "review", "Review changes"
+
+    def _review_gate(self, state: dict[str, Any]) -> tuple[str, str]:
+        """Gate after review phase.
+
+        Only proceed to done when review decision explicitly allows it.
+        Revise/rollback/hold block completion.
+        """
+        review_decision = state.get("review_decision", "").lower().strip()
+        if review_decision in {"revise", "rollback", "hold"}:
+            return (
+                "blocked",
+                f"Review decision: {review_decision}; follow decision before proceeding",
+            )
+        if review_decision in {"split", "reslice"}:
+            return (
+                "plan",
+                f"Review decision: {review_decision}; return to planning",
+            )
+        if review_decision == "commit":
+            return "done", "Task completed"
+        # No explicit positive decision -> don't auto-done
+        return "blocked", "Review incomplete; record a review decision"
 
     def _write_step_log(
         self, phase: str, state: dict[str, Any], budget_report: BudgetReport
