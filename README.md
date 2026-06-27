@@ -103,8 +103,21 @@ A set of read-only slash commands helps keep tasks bounded and recoverable:
 | `/workflow-init` | Create missing workflow scaffold files `[--dry-run]` |
 | `/workflow-doctor` | Read-only workflow diagnostics |
 | `/workflow-test` | Read-only test recommendations from changed files |
+| `/workflow-pack` | Generate a bounded context pack for a goal |
+| `/workflow-run` | Run a bounded batch execution plan `[--dry-run]` |
+| `/workflow-resume` | Resume a workflow run from saved state |
 
-These commands do not modify source files, run tests automatically, or commit changes.  See `docs/workflow.md` for details.
+These commands do not modify source files, run tests automatically, or commit changes.  See `docs/workflow.md` and `docs/workflow-run.md` for details.
+
+### N-Context Runtime
+
+cc-mini supports a configurable `context_window=N` for bounded execution:
+
+- `CC_MINI_CONTEXT_WINDOW` sets the model's total context window.
+- `CC_MINI_MAX_TOKENS` / `CC_MINI_MAX_OUTPUT_TOKENS` set the **output budget only**.
+- The runtime enforces: prompt + context pack + tools + output + safety margin <= window.
+
+This makes cc-mini work with 4K, 32K, or 200K models, local or remote.  See `docs/n-context-runtime.md` and `docs/local-32k-runtime.md` for details.
 
 ---
 
