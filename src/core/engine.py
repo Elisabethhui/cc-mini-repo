@@ -12,6 +12,8 @@ from .token_budget import TokenBudgetManager, BudgetState
 from .dehydration import maybe_dehydrate_messages
 from .checkpoint import CheckpointManager
 from .runtime_profile import _default_context_window
+from .preservation import PreservationPipeline
+from .runtime_state import RuntimeStateStore
 
 if TYPE_CHECKING:
     from .cost_tracker import CostTracker
@@ -146,6 +148,10 @@ class Engine:
         self._recent_written_artifacts: list[str] = []
         self._current_skill_name: str | None = None
         self._compact_service = None
+        self._preservation_pipeline: PreservationPipeline | None = None
+
+    def set_preservation_pipeline(self, pipeline: PreservationPipeline) -> None:
+        self._preservation_pipeline = pipeline
 
     def get_messages(self) -> list[dict]:
         return list(self._messages)
@@ -292,7 +298,7 @@ class Engine:
                     token_count = message_tokens + system_overhead
                     decision = self._budget_manager.decide(token_count)
 
-                # PRESERVE: try compact and dehydrate
+                # PRESERVE: compact + dehydrate + preservation pipeline
                 if decision.state == BudgetState.PRESERVE:
                     from .knowledge.dehydrator import MinimalDehydrator
                     dehydrator = MinimalDehydrator(str(Path.cwd()))
@@ -317,10 +323,27 @@ class Engine:
                         except Exception as exc:
                             # Compact failure must not be completely silent
                             print(f"[Compact Failed] {exc}")
-                    # If still preserve/split/hard_stop after compact, fall through
+                    # Run preservation pipeline
+                    if self._preservation_pipeline:
+                        result = self._preservation_pipeline.run(
+                            budget_state=BudgetState.PRESERVE,
+                            messages=self._messages,
+                            current_step=self._current_skill_name or "engine_loop",
+                            budget_report=None,
+                        )
+                        if result.saved_paths:
+                            print(f"[Preservation] Saved to {', '.join(result.saved_paths)}")
+                    # If still split/hard_stop after compact, fall through
 
                 # SPLIT / HARD_STOP: do not call LLM
                 if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
+                    if self._preservation_pipeline:
+                        self._preservation_pipeline.run(
+                            budget_state=decision.state,
+                            messages=self._messages,
+                            current_step=self._current_skill_name or "engine_loop",
+                            budget_report=None,
+                        )
                     self._checkpoint_manager.write_checkpoint(
                         skill=self._current_skill_name or "unknown",
                         reason=f"Pre-flight check: {decision.reason}",
@@ -386,6 +409,13 @@ class Engine:
                                     dehydrate_result = maybe_dehydrate_messages(self._messages)
 
                                 if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
+                                    if self._preservation_pipeline:
+                                        self._preservation_pipeline.run(
+                                            budget_state=decision.state,
+                                            messages=self._messages,
+                                            current_step=self._current_skill_name or "engine_loop",
+                                            budget_report=None,
+                                        )
                                     self._checkpoint_manager.write_checkpoint(
                                         skill=self._current_skill_name or "unknown",
                                         reason=decision.reason,
@@ -448,6 +478,13 @@ class Engine:
                 decision = self._budget_manager.decide(token_count)
 
                 if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
+                    if self._preservation_pipeline:
+                        self._preservation_pipeline.run(
+                            budget_state=decision.state,
+                            messages=self._messages,
+                            current_step=self._current_skill_name or "engine_loop",
+                            budget_report=None,
+                        )
                     self._checkpoint_manager.write_checkpoint(
                         skill=self._current_skill_name or "unknown",
                         reason=f"Post-tool burst protection: {decision.reason}",
