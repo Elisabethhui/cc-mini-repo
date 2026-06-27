@@ -711,6 +711,135 @@ def _cmd_workflow_pack(ctx: CommandContext, args: str) -> None:
             ctx.console.print(f"  • {h}")
 
 
+def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
+    """Dry-run a bounded batch execution plan."""
+    from .batch_runner import BatchRunner
+    from .context_pack import ContextPackBuilder
+    from .plan_graph import PlanGraph
+    from .code_retrieval import CodeGraphRetrievalAdapter
+    from .runtime_state import RuntimeStateStore
+
+    raw = args.strip()
+    if not raw:
+        ctx.console.print("[dim]Usage: /workflow-run --dry-run <goal>[/dim]")
+        return
+
+    dry_run = False
+    if raw.startswith("--dry-run"):
+        dry_run = True
+        raw = raw[len("--dry-run"):].strip()
+
+    if not raw:
+        ctx.console.print("[dim]Usage: /workflow-run --dry-run <goal>[/dim]")
+        return
+
+    goal = raw
+    workspace = Path.cwd()
+
+    # 1. Create run state
+    store = RuntimeStateStore(str(workspace))
+    run_id = store.run_id
+
+    # 2. Create PlanGraph (ensure dirs first)
+    store._ensure_dirs()
+    graph = PlanGraph(
+        run_id=run_id,
+        goal=goal,
+        phase="intake",
+        next_action="Start intake",
+    )
+    plan_path = store.base_dir / "plan-graph.json"
+    plan_path.write_text(graph.to_json(), encoding="utf-8")
+    store.patch_state(
+        goal=goal,
+        phase="intake",
+        next_action="Start intake",
+    )
+
+    # 3. Try CodeGraph retrieval if code exists
+    retrieval_results = []
+    has_code = (workspace / ".codegraph").exists() or (workspace / "src").exists()
+    if has_code:
+        adapter = CodeGraphRetrievalAdapter(workspace)
+        keyword = goal.split()[0] if goal.split() else goal
+        result = adapter.query_symbols(keyword)
+        retrieval_results.append(result)
+        fallback = adapter.fallback_rg(goal[:50])
+        retrieval_results.append(fallback)
+
+    # 4. Build context pack
+    builder = ContextPackBuilder(
+        context_window=32768,
+        reserved_output_tokens=2048,
+        safety_margin_tokens=1024,
+    )
+    pack = builder.build(
+        goal=goal,
+        plan_graph=graph,
+        retrieval_results=retrieval_results,
+        store=store,
+    )
+
+    # 5. Save context pack
+    packs_dir = workspace / ".ai-dev" / "context-packs"
+    packs_dir.mkdir(parents=True, exist_ok=True)
+    pack_path = packs_dir / f"{run_id}.md"
+    pack_path.write_text(pack.markdown, encoding="utf-8")
+
+    # 6. Compute batch plan (dry-run: set up runner but don't execute workers)
+    runner = BatchRunner(
+        store,
+        max_steps=7,
+        context_window=32768,
+        reserved_output_tokens=2048,
+        safety_margin_tokens=1024,
+    )
+    # Initialise state the same way .run() does, but stop before the loop
+    state = store.load_state()
+    state["goal"] = goal
+    state["phase"] = "intake"
+    state["next_action"] = "Start intake"
+    store.save_state(state)
+
+    # Budget for the initial state
+    budget_report = runner._calculate_budget(state)
+
+    # 7. Output dry-run summary
+    ctx.console.print(f"[green]✓[/green] Dry-run plan created: [bold]{run_id}[/bold]")
+    ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
+    ctx.console.print(f"[dim]  Phase: intake[/dim]")
+    ctx.console.print(f"[dim]  Next Action: Start intake[/dim]")
+    ctx.console.print("")
+    ctx.console.print(f"[dim]  Context Pack: {pack_path}[/dim]")
+    ctx.console.print(
+        f"[dim]  Tokens: {pack.budget_report.projected_total_tokens:,} / "
+        f"{pack.budget_report.context_window:,}[/dim]"
+    )
+    ctx.console.print(f"[dim]  Pack State: {pack.budget_report.state.value}[/dim]")
+    ctx.console.print("")
+    ctx.console.print(f"[dim]  Budget: {budget_report.state.value} "
+                      f"({budget_report.projected_total_tokens}/{budget_report.context_window})[/dim]")
+
+    if pack.warnings:
+        ctx.console.print("[yellow]Pack Warnings:[/yellow]")
+        for w in pack.warnings:
+            ctx.console.print(f"  • {w}")
+
+    if budget_report.warnings:
+        ctx.console.print("[yellow]Budget Warnings:[/yellow]")
+        for w in budget_report.warnings:
+            ctx.console.print(f"  • {w}")
+
+    # Show planned phases
+    ctx.console.print("")
+    ctx.console.print("[bold]Planned Phases:[/bold]")
+    phases = ["intake", "plan", "retrieve", "pack", "implement", "test", "review"]
+    for i, p in enumerate(phases, 1):
+        ctx.console.print(f"  {i}. {p}")
+    ctx.console.print("")
+    ctx.console.print("[dim]Run without --dry-run to execute.[/dim]")
+
+
 def _workflow_test_inputs(args: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     explicit = tuple(part for part in args.split() if part)
     if explicit:
@@ -1464,6 +1593,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
     ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
     ("workflow-pack", "Generate bounded context pack for a goal [goal|task-id]", _cmd_workflow_pack),
+    ("workflow-run", "Dry-run bounded batch execution plan [--dry-run] [goal]", _cmd_workflow_run),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
     ("plan-status", "Show current planning phase and open items", _cmd_plan_status),
