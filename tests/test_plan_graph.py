@@ -179,3 +179,35 @@ def test_from_json_ignores_unknown_fields():
     assert pg.run_id == "r1"
     assert pg.phase == "charter"
     assert pg.task_by_id("t1").goal == "G"
+
+
+def test_estimate_tokens():
+    pg = PlanGraph(run_id="r1")
+    empty_tokens = pg.estimate_tokens()
+    assert empty_tokens > 0
+
+    pg.goal = "x" * 10000
+    large_tokens = pg.estimate_tokens()
+    assert large_tokens > empty_tokens
+    assert large_tokens > 5000
+
+
+def test_to_preservation_dict():
+    pg = PlanGraph(run_id="r1", goal="Build app")
+    pg.add_decision("Use Python")
+    pg.add_open_question("Q?")
+    pg.add_module("api")
+    pg.add_risk("risk1")
+    pg.set_next_action("Do it")
+
+    d = pg.to_preservation_dict()
+    assert d["run_id"] == "r1"
+    assert d["goal"] == "Build app"
+    assert d["decisions"] == ["Use Python"]
+    assert d["open_questions"] == ["Q?"]
+    assert d["modules"] == ["api"]
+    assert d["risks"] == ["risk1"]
+    assert d["next_action"] == "Do it"
+    assert "task_dag" not in d
+    assert "artifacts" not in d
+    assert "acceptance_tests" not in d

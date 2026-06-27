@@ -234,3 +234,25 @@ class PlanGraph:
 
         id_to_node = {n.id: n for n in self.task_dag}
         return [id_to_node[tid] for tid in order if tid in id_to_node]
+
+    def estimate_tokens(self) -> int:
+        """Rough token estimate from JSON representation (char-count heuristic)."""
+        return max(1, int(len(self.to_json()) / 1.8))
+
+    def to_preservation_dict(self) -> dict[str, Any]:
+        """Return only the fields that should be preserved near context limits."""
+        return {
+            "run_id": self.run_id,
+            "project_name": self.project_name,
+            "phase": self.phase,
+            "goal": self.goal,
+            "non_goals": list(self.non_goals),
+            "constraints": list(self.constraints),
+            "assumptions": list(self.assumptions),
+            "modules": list(self.modules),
+            "interfaces": list(self.interfaces),
+            "risks": list(self.risks),
+            "open_questions": list(self.open_questions),
+            "decisions": list(self.decisions),
+            "next_action": self.next_action,
+        }
