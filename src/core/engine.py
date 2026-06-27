@@ -11,6 +11,7 @@ from pathlib import Path
 from .token_budget import TokenBudgetManager, BudgetState
 from .dehydration import maybe_dehydrate_messages
 from .checkpoint import CheckpointManager
+from .runtime_profile import _default_context_window
 
 if TYPE_CHECKING:
     from .cost_tracker import CostTracker
@@ -106,7 +107,9 @@ class Engine:
                  base_url: str | None = None,
                  effort: str | None = None,
                  session_store: SessionStore | None = None,
-                 cost_tracker: CostTracker | None = None):
+                 cost_tracker: CostTracker | None = None,
+                 context_window: int | None = None,
+                 safety_margin_tokens: int | None = None):
         self._provider = provider
         self._model = resolve_model(model, provider=provider)
         self._max_tokens = max_tokens or default_max_tokens_for_model(
@@ -125,11 +128,20 @@ class Engine:
         self._messages: list[dict] = []
         self._aborted = False
         self._turn_start_len: int | None = None
-        self._active_stream = None 
+        self._active_stream = None
         self._session_store = session_store
         self._cost_tracker = cost_tracker
-        
-        self._budget_manager = TokenBudgetManager()
+
+        resolved_context_window = (
+            context_window
+            if context_window is not None
+            else _default_context_window(self._provider, self._model, base_url)
+        )
+        self._budget_manager = TokenBudgetManager(
+            context_window=resolved_context_window,
+            max_output_tokens=self._max_tokens,
+            safety_margin_tokens=safety_margin_tokens or 1_024,
+        )
         self._checkpoint_manager = CheckpointManager(repo_root=Path.cwd())
         self._recent_written_artifacts: list[str] = []
         self._current_skill_name: str | None = None
@@ -258,17 +270,30 @@ class Engine:
                 if self._aborted:
                     raise AbortedError()
 
-                # --- [新增] 事前拦截预检查 (Pre-flight Check) ---
-                token_count = self._budget_manager.estimate_from_messages(self._messages)
-                token_count = int(token_count * 1.5)  # 👈 关键
+                # --- N-context pre-flight budget check ---
+                message_tokens = self._budget_manager.estimate_from_messages(self._messages)
+                # Rough system prompt + tool schema overhead (chars / 4 heuristic)
+                system_overhead = (
+                    len(self._system_prompt) // 4
+                    + sum(len(str(t.to_api_schema())) for t in self._tools.values()) // 4
+                )
+                token_count = message_tokens + system_overhead
                 decision = self._budget_manager.decide(token_count)
 
-                # Token risk 最小可见输出 (Phase 1)
-                if decision.state != BudgetState.NORMAL:
-                    print(f"[Token Risk] state={decision.state.value}, tokens={decision.token_estimate}")
+                # Budget risk visibility
+                if decision.state != BudgetState.OK:
+                    print(f"[Budget] state={decision.state.value}, projected={decision.projected_total_tokens}")
 
-                # Phase 2: 最小 dehydration + snapshot 闭环
-                if decision.state in (BudgetState.WARNING, BudgetState.COMPACT, BudgetState.CHECKPOINT, BudgetState.HARD_STOP):
+                # WARNING: light cleanup (dehydrate)
+                if decision.state == BudgetState.WARNING:
+                    maybe_dehydrate_messages(self._messages)
+                    # Recompute after cleanup
+                    message_tokens = self._budget_manager.estimate_from_messages(self._messages)
+                    token_count = message_tokens + system_overhead
+                    decision = self._budget_manager.decide(token_count)
+
+                # PRESERVE: try compact and dehydrate
+                if decision.state == BudgetState.PRESERVE:
                     from .knowledge.dehydrator import MinimalDehydrator
                     dehydrator = MinimalDehydrator(str(Path.cwd()))
                     d_result = dehydrator.check_and_dehydrate(
@@ -278,37 +303,33 @@ class Engine:
                         current_step=self._current_skill_name or "engine_loop",
                         active_goal="token_budget_protection",
                     )
-                    if d_result["dehydrated"]:
-                        print(f"[Dehydration] {d_result['replaced_count']} messages dehydrated")
-                        if d_result["snapshot_path"]:
+                    if d_result.get("dehydrated"):
+                        print(f"[Dehydration] {d_result.get('replaced_count', 0)} messages dehydrated")
+                        if d_result.get("snapshot_path"):
                             print(f"[Snapshot] Saved to {d_result['snapshot_path']}")
-
-                # 脱水处理
-                if decision.should_dehydrate:
                     maybe_dehydrate_messages(self._messages)
-                    token_count = self._budget_manager.estimate_from_messages(self._messages)
-                    decision = self._budget_manager.decide(token_count)
+                    if self._compact_service:
+                        try:
+                            self._compact_service.compact(self._messages, self._system_prompt)
+                            message_tokens = self._budget_manager.estimate_from_messages(self._messages)
+                            token_count = message_tokens + system_overhead
+                            decision = self._budget_manager.decide(token_count)
+                        except Exception as exc:
+                            # Compact failure must not be completely silent
+                            print(f"[Compact Failed] {exc}")
+                    # If still preserve/split/hard_stop after compact, fall through
 
-                # 自动摘要压缩处理
-                if decision.should_compact and self._compact_service:
-                    try:
-                        self._compact_service.compact(self._messages)
-                        token_count = self._budget_manager.estimate_from_messages(self._messages)
-                        decision = self._budget_manager.decide(token_count)
-                    except Exception:
-                        pass # 若压缩异常则跳过，交由 Checkpoint 兜底
-
-                # 如果依旧爆仓，直接切断防止 OOM
-                if decision.should_checkpoint or decision.should_stop:
+                # SPLIT / HARD_STOP: do not call LLM
+                if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
                     self._checkpoint_manager.write_checkpoint(
                         skill=self._current_skill_name or "unknown",
-                        reason=f"Pre-flight check: Context OOM protected ({decision.reason})",
+                        reason=f"Pre-flight check: {decision.reason}",
                         next_skill="/resume-from-checkpoint",
                         artifacts_written=list(self._recent_written_artifacts),
                         token_estimate=decision.token_estimate,
                         budget_state=decision.state.value,
                     )
-                    yield ("text", "\n\n[System Alert: 上下文逼近本地显存 OOM 临界点。已在 API 请求前自动拦截并保存 Checkpoint！请运行 /resume-from-checkpoint 开启干净会话]\n")
+                    yield ("text", "\n\n[System Alert: Context budget exceeded. Checkpoint saved. Run /resume-from-checkpoint to continue.]\n")
                     return
                 # ------------------------------------------------
 
@@ -364,7 +385,7 @@ class Engine:
                                 if decision.should_dehydrate:
                                     dehydrate_result = maybe_dehydrate_messages(self._messages)
 
-                                if decision.should_checkpoint:
+                                if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
                                     self._checkpoint_manager.write_checkpoint(
                                         skill=self._current_skill_name or "unknown",
                                         reason=decision.reason,
@@ -417,11 +438,16 @@ class Engine:
                     "content": _normalize_message_content(final.content),
                 })
                 self._persist(self._messages[-1])
-                # --- [新增] 强制二次检查：防止工具结果塞爆上下文 ---
-                token_count = self._budget_manager.estimate_from_messages(self._messages)
+                # --- Post-tool burst protection ---
+                message_tokens = self._budget_manager.estimate_from_messages(self._messages)
+                system_overhead = (
+                    len(self._system_prompt) // 4
+                    + sum(len(str(t.to_api_schema())) for t in self._tools.values()) // 4
+                )
+                token_count = message_tokens + system_overhead
                 decision = self._budget_manager.decide(token_count)
-                
-                if decision.should_checkpoint:
+
+                if decision.state in (BudgetState.SPLIT, BudgetState.HARD_STOP):
                     self._checkpoint_manager.write_checkpoint(
                         skill=self._current_skill_name or "unknown",
                         reason=f"Post-tool burst protection: {decision.reason}",
@@ -430,8 +456,9 @@ class Engine:
                         token_estimate=decision.token_estimate,
                         budget_state=decision.state.value,
                     )
-                    yield ("text", "\n\n[System Alert: 工具返回数据过大，已触发熔断保护以防止 OOM。请运行 /resume-from-checkpoint]\n")
+                    yield ("text", "\n\n[System Alert: Post-tool burst protection triggered. Run /resume-from-checkpoint]\n")
                     return
+                # ---
 
 
                 if not tool_uses:

@@ -33,7 +33,7 @@ _CONTEXT_WINDOWS: list[tuple[str, int]] = [
     ("claude-haiku-4-5", 200_000),
     ("claude-3-5-haiku", 200_000),
 ]
-_DEFAULT_CONTEXT_WINDOW = 200_000
+_DEFAULT_CONTEXT_WINDOW = 32_768
 
 
 def _context_window_for_model(model: str) -> int:

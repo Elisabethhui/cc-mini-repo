@@ -3,6 +3,7 @@ from core.engine import Engine
 from core.config import default_max_tokens_for_model
 from core.tools.base import Tool, ToolResult
 from core.permissions import PermissionChecker
+from core.token_budget import TokenBudgetManager, BudgetThresholds
 
 
 class EchoTool(Tool):
@@ -23,6 +24,8 @@ def _make_engine(auto_approve=True):
         tools=[EchoTool()],
         system_prompt="You are a test assistant.",
         permission_checker=PermissionChecker(auto_approve=auto_approve),
+        max_tokens=1_000,
+        context_window=100_000,
     )
 
 
@@ -115,6 +118,7 @@ def test_engine_uses_model_specific_default_max_tokens():
         system_prompt="You are a test assistant.",
         permission_checker=PermissionChecker(auto_approve=True),
         model="claude-sonnet-4",
+        context_window=200_000,
     )
 
     with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")) as stream:
@@ -160,3 +164,103 @@ def test_engine_normalizes_tool_result_blocks_before_follow_up_request():
         "content": "Echo: world",
         "is_error": False,
     }]
+
+
+def test_engine_preflight_hard_stop_blocks_llm_call():
+    """HARD_STOP pre-flight should prevent the LLM call and emit a checkpoint event."""
+    engine = _make_engine()
+    # Tiny window forces hard_stop regardless of message size
+    engine._budget_manager = TokenBudgetManager(
+        context_window=50,
+        max_output_tokens=20,
+        safety_margin_tokens=10,
+    )
+
+    with patch.object(engine._client, "stream_messages") as mock_stream:
+        events = list(engine.submit("hi"))
+        mock_stream.assert_not_called()
+
+    text_events = [e for e in events if e[0] == "text"]
+    assert any("checkpoint" in e[1].lower() for e in text_events)
+
+
+def test_engine_preflight_warning_allows_llm_call():
+    """WARNING pre-flight should dehydrate but still allow the LLM call."""
+    engine = _make_engine()
+    # Low warning_ratio so the default system prompt + tools trigger WARNING
+    # but stay below PRESERVE (default 0.75)
+    engine._budget_manager = TokenBudgetManager(
+        context_window=10_000,
+        max_output_tokens=2_000,
+        safety_margin_tokens=1_000,
+        thresholds=BudgetThresholds(warning_ratio=0.001),
+    )
+
+    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
+        events = list(engine.submit("hi"))
+
+    text_events = [e for e in events if e[0] == "text"]
+    assert any("hello" in e[1] for e in text_events)
+
+
+def test_engine_preflight_preserve_tries_compact():
+    """PRESERVE pre-flight should attempt compact if compact_service is available."""
+    engine = _make_engine()
+    # Small window + low preserve_ratio forces PRESERVE but stays below SPLIT
+    engine._budget_manager = TokenBudgetManager(
+        context_window=200,
+        max_output_tokens=50,
+        safety_margin_tokens=20,
+        thresholds=BudgetThresholds(preserve_ratio=0.5, split_ratio=0.9),
+    )
+
+    compact_called = False
+
+    class FakeCompactService:
+        def compact(self, messages, system_prompt):
+            nonlocal compact_called
+            compact_called = True
+            # Simulate compaction by clearing most messages
+            messages[:] = messages[-2:] if len(messages) >= 2 else messages
+
+    engine._compact_service = FakeCompactService()
+
+    with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
+        events = list(engine.submit("hi"))
+
+    assert compact_called is True
+    text_events = [e for e in events if e[0] == "text"]
+    assert any("hello" in e[1] for e in text_events)
+
+
+def test_engine_preflight_preserve_falls_back_when_compact_fails():
+    """If compact fails in PRESERVE state, engine should not silently ignore it."""
+    engine = _make_engine()
+    engine._budget_manager = TokenBudgetManager(
+        context_window=200,
+        max_output_tokens=50,
+        safety_margin_tokens=20,
+        thresholds=BudgetThresholds(preserve_ratio=0.5, split_ratio=0.9),
+    )
+
+    class BrokenCompactService:
+        def compact(self, messages, system_prompt):
+            raise RuntimeError("compact failure")
+
+    engine._compact_service = BrokenCompactService()
+
+    import io
+    import sys
+    old_stdout = sys.stdout
+    sys.stdout = captured = io.StringIO()
+    try:
+        with patch.object(engine._client, "stream_messages", return_value=_make_text_response("hello")):
+            events = list(engine.submit("hi"))
+    finally:
+        sys.stdout = old_stdout
+
+    output = captured.getvalue()
+    assert "[Compact Failed]" in output
+    # PRESERVE does not stop the engine, so the LLM call should still proceed
+    text_events = [e for e in events if e[0] == "text"]
+    assert any("hello" in e[1] for e in text_events)

@@ -2,7 +2,7 @@
 from pathlib import Path
 import core.engine as engine_mod
 from core.engine import Engine
-from core.token_budget import BudgetThresholds
+from core.token_budget import TokenBudgetManager, BudgetThresholds
 from tests.conftest import (
     DummyClient,
     DummyFinalMessage,
@@ -26,23 +26,20 @@ def test_engine_checkpoints_after_usage_threshold(tmp_repo, monkeypatch):
         permission_checker=DummyPermissionChecker(),
         session_store=DummySessionStore(),
         cost_tracker=DummyCostTracker(),
+        context_window=30_000,
+        max_tokens=1_000,
+        safety_margin_tokens=500,
     )
     eng._client = DummyClient([
         DummyStream(
             text_chunks=["hello"],
             final_message=DummyFinalMessage(
                 content=[DummyTextBlock("done")],
-                usage=DummyUsage(input_tokens=27000, output_tokens=100),
+                usage=DummyUsage(input_tokens=27_000, output_tokens=100),
             ),
         )
     ])
-    eng._budget_manager.thresholds = BudgetThresholds(
-        soft_limit=1000,
-        compact_limit=2000,
-        checkpoint_limit=2500,
-        hard_stop_limit=3000,
-        max_context=32768,
-    )
+    # Post-flight: projected = 27_000 + 1_000 + 500 = 28_500 / 30_000 = 95% > 92% hard_stop
     events = list(eng.submit("hi"))
     texts = [e[1] for e in events if e[0] == "text"]
     assert any("checkpoint saved" in t.lower() for t in texts)
@@ -58,6 +55,7 @@ def test_engine_records_recent_written_artifacts(tmp_repo, monkeypatch):
         permission_checker=DummyPermissionChecker(),
         session_store=DummySessionStore(),
         cost_tracker=DummyCostTracker(),
+        context_window=100_000,
     )
     eng._client = DummyClient([
         DummyStream(
@@ -86,6 +84,9 @@ def test_engine_tool_result_budget_check_after_messages_append(tmp_repo, monkeyp
         permission_checker=DummyPermissionChecker(),
         session_store=DummySessionStore(),
         cost_tracker=DummyCostTracker(),
+        context_window=200,
+        max_tokens=50,
+        safety_margin_tokens=20,
     )
     eng._client = DummyClient([
         DummyStream(
@@ -101,13 +102,8 @@ def test_engine_tool_result_budget_check_after_messages_append(tmp_repo, monkeyp
             ),
         ),
     ])
-    eng._budget_manager.thresholds = BudgetThresholds(
-        soft_limit=100,
-        compact_limit=200,
-        checkpoint_limit=300,
-        hard_stop_limit=350,
-        max_context=32768,
-    )
+    # With tiny context window, pre-flight should hard_stop before any LLM call
     events = list(eng.submit("run tool"))
-    # May or may not checkpoint depending on rough estimate, but should complete without exception
     assert events
+    texts = [e[1] for e in events if e[0] == "text"]
+    assert any("checkpoint" in t.lower() for t in texts)
