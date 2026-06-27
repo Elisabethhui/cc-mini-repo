@@ -69,6 +69,11 @@ _ENV_MEMORY_DIR = "CC_MINI_MEMORY_DIR"
 _ENV_PROVIDER = "CC_MINI_PROVIDER"
 _ENV_EFFORT = "CC_MINI_EFFORT"
 _ENV_BUDDY_MODEL = "CC_MINI_BUDDY_MODEL"
+_ENV_CONTEXT_WINDOW = "CC_MINI_CONTEXT_WINDOW"
+_ENV_MAX_OUTPUT_TOKENS = "CC_MINI_MAX_OUTPUT_TOKENS"
+_ENV_SAFETY_MARGIN_TOKENS = "CC_MINI_SAFETY_MARGIN_TOKENS"
+_ENV_AUTO_COMPACT = "CC_MINI_AUTO_COMPACT"
+_ENV_AUTO_APPROVE = "CC_MINI_AUTO_APPROVE"
 _DEFAULT_CONFIG_PATHS = (
     Path.home() / ".config" / "cc-mini" / "config.toml",
     Path.cwd() / ".cc-mini.toml",
@@ -91,6 +96,11 @@ class AppConfig:
     config_paths: tuple[Path, ...] = ()
     local_profile: LocalModelProfile | None = None
     runtime_profile: RuntimeProfile | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+    safety_margin_tokens: int | None = None
+    auto_compact: bool = False
+    auto_approve: bool = False
 
 
 def resolve_model(model: str | None, provider: str = DEFAULT_PROVIDER) -> str:
@@ -161,10 +171,11 @@ def load_app_config(args: Namespace) -> AppConfig:
 
     base_url_value = args.base_url or selected_env_values.get("base_url") or _file_value("base_url")
 
+    # max_tokens / max_output_tokens (output budget) — CC_MINI_MAX_OUTPUT_TOKENS takes priority over CC_MINI_MAX_TOKENS
     raw_max_tokens = (
         args.max_tokens
         if args.max_tokens is not None
-        else env_values.get("max_tokens", _file_value("max_tokens"))
+        else env_values.get("max_output_tokens", env_values.get("max_tokens", _file_value("max_output_tokens") or _file_value("max_tokens")))
     )
     max_tokens = _parse_max_tokens(
         raw_max_tokens,
@@ -204,6 +215,22 @@ def load_app_config(args: Namespace) -> AppConfig:
     if getattr(args, "no_auto_dream", False):
         auto_dream = False
 
+    # N-context runtime configuration
+    raw_context_window = env_values.get("context_window", _file_value("context_window"))
+    context_window = int(raw_context_window) if raw_context_window is not None else None
+
+    raw_max_output_tokens = env_values.get("max_output_tokens", _file_value("max_output_tokens"))
+    max_output_tokens = int(raw_max_output_tokens) if raw_max_output_tokens is not None else None
+
+    raw_safety_margin_tokens = env_values.get("safety_margin_tokens", _file_value("safety_margin_tokens"))
+    safety_margin_tokens = int(raw_safety_margin_tokens) if raw_safety_margin_tokens is not None else None
+
+    raw_auto_compact = env_values.get("auto_compact", _file_value("auto_compact"))
+    auto_compact = str(raw_auto_compact).lower() not in ("false", "0", "no") if raw_auto_compact is not None else False
+
+    raw_auto_approve = env_values.get("auto_approve", _file_value("auto_approve"))
+    auto_approve = str(raw_auto_approve).lower() not in ("false", "0", "no") if raw_auto_approve is not None else False
+
     return AppConfig(
         provider=provider,
         api_key=args.api_key or selected_env_values.get("api_key") or _file_value("api_key"),
@@ -227,6 +254,11 @@ def load_app_config(args: Namespace) -> AppConfig:
             base_url=args.base_url or selected_env_values.get("base_url") or _file_value("base_url"),
             max_output_tokens=max_tokens,
         ),
+        context_window=context_window,
+        max_output_tokens=max_output_tokens,
+        safety_margin_tokens=safety_margin_tokens,
+        auto_compact=auto_compact,
+        auto_approve=auto_approve,
     )
 
 def _load_file_values(explicit_path: str | None) -> tuple[dict[str, Any], tuple[Path, ...]]:
@@ -287,6 +319,18 @@ def _read_config_file(path: Path) -> dict[str, Any]:
         if key in data:
             values["top"][key] = data[key]
 
+    # [context] section for N-context runtime
+    context_section = data.get("context", {})
+    if isinstance(context_section, dict):
+        for key, top_key in (
+            ("window", "context_window"),
+            ("max_output_tokens", "max_output_tokens"),
+            ("safety_margin_tokens", "safety_margin_tokens"),
+            ("auto_compact", "auto_compact"),
+        ):
+            if key in context_section:
+                values["top"][top_key] = context_section[key]
+
     return values
 
 def _load_env_values() -> dict[str, Any]:
@@ -311,6 +355,16 @@ def _load_env_values() -> dict[str, Any]:
         values["effort"] = os.environ[_ENV_EFFORT]
     if os.getenv(_ENV_BUDDY_MODEL):
         values["buddy_model"] = os.environ[_ENV_BUDDY_MODEL]
+    if os.getenv(_ENV_CONTEXT_WINDOW):
+        values["context_window"] = os.environ[_ENV_CONTEXT_WINDOW]
+    if os.getenv(_ENV_MAX_OUTPUT_TOKENS):
+        values["max_output_tokens"] = os.environ[_ENV_MAX_OUTPUT_TOKENS]
+    if os.getenv(_ENV_SAFETY_MARGIN_TOKENS):
+        values["safety_margin_tokens"] = os.environ[_ENV_SAFETY_MARGIN_TOKENS]
+    if os.getenv(_ENV_AUTO_COMPACT):
+        values["auto_compact"] = os.environ[_ENV_AUTO_COMPACT]
+    if os.getenv(_ENV_AUTO_APPROVE):
+        values["auto_approve"] = os.environ[_ENV_AUTO_APPROVE]
     return values
 
 def _parse_max_tokens(raw_value: Any, default: int) -> int:

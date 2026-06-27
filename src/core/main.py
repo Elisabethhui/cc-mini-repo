@@ -822,7 +822,7 @@ def main() -> None:
         return prompt
 
     permissions = PermissionChecker(
-        auto_approve=args.auto_approve,
+        auto_approve=args.auto_approve or app_config.auto_approve,
         sandbox_manager=sandbox_mgr,
     )
     permissions.set_run_mode(run_mode)
@@ -1220,7 +1220,7 @@ def main() -> None:
                 continue
 
         # Auto-compact when approaching token limits
-        if should_compact(engine.get_messages(), model=app_config.model,
+        if app_config.auto_compact and should_compact(engine.get_messages(), model=app_config.model,
                           last_input_tokens=cost_tracker.last_input_tokens):
             console.print("[dim]Auto-compacting conversation…[/dim]")
             try:

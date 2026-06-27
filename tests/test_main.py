@@ -298,3 +298,59 @@ def test_mode_specific_system_prompt_differs_by_run_mode(tmp_path):
 
     assert "WIKI_STRICT Flow-State Mode" not in standard_prompt
     assert "WIKI_STRICT Flow-State Mode" in wiki_prompt
+
+
+def test_main_auto_approve_env_var_affects_permission_checker(tmp_path, monkeypatch):
+    """CC_MINI_AUTO_APPROVE=true should propagate to PermissionChecker in main()."""
+    from core.main import main
+    from core.permissions import PermissionChecker
+
+    monkeypatch.setenv("CC_MINI_AUTO_APPROVE", "true")
+    captured_auto_approve = []
+
+    original_init = PermissionChecker.__init__
+
+    def capturing_init(self, auto_approve=False, **kwargs):
+        captured_auto_approve.append(auto_approve)
+        original_init(self, auto_approve=auto_approve, **kwargs)
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--mode", "standard"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store, \
+         patch("core.main._bordered_prompt", side_effect=EOFError), \
+         patch.object(PermissionChecker, "__init__", capturing_init):
+        mocked_session_store.return_value.session_id = "session-1"
+        mocked_session_store.return_value.mode = "standard"
+        main()
+
+    # There may be multiple PermissionChecker instances (main + worker).
+    # At least one should have auto_approve=True from the env var.
+    assert any(captured_auto_approve), f"Expected at least one auto_approve=True, got {captured_auto_approve}"
+
+
+def test_main_auto_approve_cli_flag_overrides_env(tmp_path, monkeypatch):
+    """--auto-approve CLI flag should still work and override env var default."""
+    from core.main import main
+    from core.permissions import PermissionChecker
+
+    monkeypatch.setenv("CC_MINI_AUTO_APPROVE", "false")
+    captured_auto_approve = []
+
+    original_init = PermissionChecker.__init__
+
+    def capturing_init(self, auto_approve=False, **kwargs):
+        captured_auto_approve.append(auto_approve)
+        original_init(self, auto_approve=auto_approve, **kwargs)
+
+    with patch.object(sys, "argv", ["cc-mini", "run", "--auto-approve"]), \
+         patch("core.main.Path.cwd", return_value=tmp_path), \
+         patch("core.main.ensure_memory_dir"), \
+         patch("core.main.SessionStore") as mocked_session_store, \
+         patch("core.main._bordered_prompt", side_effect=EOFError), \
+         patch.object(PermissionChecker, "__init__", capturing_init):
+        mocked_session_store.return_value.session_id = "session-1"
+        mocked_session_store.return_value.mode = "standard"
+        main()
+
+    assert any(captured_auto_approve), f"Expected at least one auto_approve=True from CLI, got {captured_auto_approve}"

@@ -78,6 +78,32 @@ Recommendations:
 
 ---
 
+## N-Context Runtime Configuration
+
+The runtime supports configurable `context_window=N` via environment variables or TOML:
+
+| Environment Variable | TOML Key | Description |
+|---------------------|----------|-------------|
+| `CC_MINI_CONTEXT_WINDOW` | `context.window` | Model context window size |
+| `CC_MINI_MAX_OUTPUT_TOKENS` | `context.max_output_tokens` | Output token budget (alias: `CC_MINI_MAX_TOKENS`) |
+| `CC_MINI_SAFETY_MARGIN_TOKENS` | `context.safety_margin_tokens` | Reserved safety margin |
+| `CC_MINI_AUTO_COMPACT` | `context.auto_compact` | Auto-compact when approaching limits |
+| `CC_MINI_AUTO_APPROVE` | — | Auto-approve all tool permissions |
+
+> **Note:** `CC_MINI_MAX_TOKENS` is preserved for backward compatibility and always means **output tokens**, not the full context window.
+
+Example `.cc-mini.toml`:
+
+```toml
+[context]
+window = 32768
+max_output_tokens = 2048
+safety_margin_tokens = 2048
+auto_compact = true
+```
+
+---
+
 ## 32K Small-Context Workflow
 
 For 32 K context models, the recommended bounded workflow is:

@@ -121,6 +121,11 @@ These commands do not modify source files, run tests automatically, or commit ch
 | `CC_MINI_PROVIDER` | `anthropic` or `openai` |
 | `CC_MINI_MODEL` | Model name (e.g. `claude-sonnet-4-6`) |
 | `CC_MINI_MAX_TOKENS` | **Max output tokens** per response (not the full context window) |
+| `CC_MINI_MAX_OUTPUT_TOKENS` | Alias for `CC_MINI_MAX_TOKENS` (output token budget) |
+| `CC_MINI_CONTEXT_WINDOW` | Model context window size (e.g. `32768`, `200000`) |
+| `CC_MINI_SAFETY_MARGIN_TOKENS` | Reserved safety margin (default varies by runtime profile) |
+| `CC_MINI_AUTO_COMPACT` | Enable automatic context compaction when approaching limits |
+| `CC_MINI_AUTO_APPROVE` | Auto-approve all tool permissions (dangerous; use with care) |
 | `CC_MINI_EFFORT` | Reasoning effort: `low`, `medium`, `high` |
 | `CC_MINI_MODE` | `standard` or `wiki_strict` |
 | `CC_MINI_BUDDY_MODEL` | Model for companion reactions |
@@ -145,6 +150,19 @@ Loaded in order (later overrides earlier):
 
 1. `~/.config/cc-mini/config.toml`
 2. `.cc-mini.toml` in current working directory
+
+Example `.cc-mini.toml` with N-context runtime settings:
+
+```toml
+provider = "openai"
+model = "gpt-4.1"
+max_tokens = 16384
+
+[context]
+window = 32768
+max_output_tokens = 2048
+safety_margin_tokens = 2048
+```
 
 ### Local Models (MLX / OMLX / OpenAI-Compatible)
 

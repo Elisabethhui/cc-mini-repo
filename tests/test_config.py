@@ -237,3 +237,80 @@ def test_load_app_config_builds_runtime_profile_for_cloud(tmp_path: Path, monkey
     assert config.runtime_profile.max_output_tokens == 32_000
     assert config.runtime_profile.runtime_kind == "anthropic"
     assert config.runtime_profile.available_input_tokens > 0
+
+
+def test_load_app_config_reads_context_env_vars(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CC_MINI_CONTEXT_WINDOW", "64000")
+    monkeypatch.setenv("CC_MINI_MAX_OUTPUT_TOKENS", "4096")
+    monkeypatch.setenv("CC_MINI_SAFETY_MARGIN_TOKENS", "1024")
+    monkeypatch.setenv("CC_MINI_AUTO_COMPACT", "true")
+    monkeypatch.setenv("CC_MINI_AUTO_APPROVE", "1")
+
+    config = load_app_config(_args())
+
+    assert config.context_window == 64000
+    assert config.max_output_tokens == 4096
+    assert config.safety_margin_tokens == 1024
+    assert config.auto_compact is True
+    assert config.auto_approve is True
+
+
+def test_load_app_config_reads_context_toml_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("CC_MINI_CONTEXT_WINDOW", raising=False)
+    monkeypatch.delenv("CC_MINI_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("CC_MINI_SAFETY_MARGIN_TOKENS", raising=False)
+    monkeypatch.delenv("CC_MINI_AUTO_COMPACT", raising=False)
+    monkeypatch.delenv("CC_MINI_AUTO_APPROVE", raising=False)
+    monkeypatch.delenv("CC_MINI_MAX_TOKENS", raising=False)
+
+    config_path = tmp_path / "cc-mini.toml"
+    config_path.write_text(
+        '[context]\n'
+        'window = 48000\n'
+        'max_output_tokens = 8192\n'
+        'safety_margin_tokens = 2048\n'
+        'auto_compact = true\n',
+        encoding="utf-8",
+    )
+
+    config = load_app_config(_args(config=str(config_path)))
+
+    assert config.context_window == 48000
+    assert config.max_output_tokens == 8192
+    assert config.safety_margin_tokens == 2048
+    assert config.auto_compact is True
+
+
+def test_load_app_config_max_output_tokens_env_overrides_max_tokens(monkeypatch: pytest.MonkeyPatch):
+    """CC_MINI_MAX_OUTPUT_TOKENS takes priority over CC_MINI_MAX_TOKENS."""
+    monkeypatch.setenv("CC_MINI_MAX_OUTPUT_TOKENS", "2048")
+    monkeypatch.setenv("CC_MINI_MAX_TOKENS", "8192")
+
+    config = load_app_config(_args())
+
+    assert config.max_tokens == 2048
+    assert config.max_output_tokens == 2048
+
+
+def test_load_app_config_max_tokens_backward_compatible(monkeypatch: pytest.MonkeyPatch):
+    """CC_MINI_MAX_TOKENS still works when CC_MINI_MAX_OUTPUT_TOKENS is absent."""
+    monkeypatch.delenv("CC_MINI_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("CC_MINI_MAX_TOKENS", "4096")
+
+    config = load_app_config(_args())
+
+    assert config.max_tokens == 4096
+
+
+def test_load_app_config_auto_compact_false_values(monkeypatch: pytest.MonkeyPatch):
+    for false_val in ("false", "0", "no", "FALSE", "No"):
+        monkeypatch.setenv("CC_MINI_AUTO_COMPACT", false_val)
+        config = load_app_config(_args())
+        assert config.auto_compact is False, f"expected False for {false_val!r}"
+
+
+def test_load_app_config_auto_approve_false_values(monkeypatch: pytest.MonkeyPatch):
+    for false_val in ("false", "0", "no", "FALSE", "No"):
+        monkeypatch.setenv("CC_MINI_AUTO_APPROVE", false_val)
+        config = load_app_config(_args())
+        assert config.auto_approve is False, f"expected False for {false_val!r}"
