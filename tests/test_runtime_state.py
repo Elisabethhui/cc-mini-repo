@@ -155,3 +155,23 @@ def test_store_generates_run_id_when_none(tmp_path: Path):
     store = RuntimeStateStore(tmp_path)
     assert store.run_id
     assert len(store.run_id) == 15
+
+
+def test_list_runs_returns_sorted_run_ids_with_state_json(tmp_path: Path):
+    # Create two runs with state.json
+    store_a = RuntimeStateStore(tmp_path, run_id="run-a")
+    store_a.save_state(store_a.default_state())
+
+    store_b = RuntimeStateStore(tmp_path, run_id="run-b")
+    store_b.save_state(store_b.default_state())
+
+    # Create a directory without state.json (should be ignored)
+    (tmp_path / ".ai-dev" / "runtime" / "empty-run").mkdir(parents=True)
+
+    runs = RuntimeStateStore.list_runs(tmp_path)
+    assert runs == ["run-a", "run-b"]
+
+
+def test_list_runs_returns_empty_when_no_runtime_dir(tmp_path: Path):
+    runs = RuntimeStateStore.list_runs(tmp_path)
+    assert runs == []

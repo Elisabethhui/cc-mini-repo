@@ -72,22 +72,28 @@ class BatchRunner:
         self,
         goal: str,
         workers: dict[str, Callable[[dict[str, Any]], None]] | None = None,
+        *,
+        init_state: bool = True,
     ) -> dict[str, Any]:
         """Run the batch loop until a terminal phase or max_steps is reached.
 
         *workers* maps phase names to callables that receive and may mutate
         the runtime state dict.
+
+        When *init_state* is False the existing runtime state is used as-is
+        (for resume).
         """
         workers = workers or {}
 
         # Initialise state
         state = self.store.load_state()
-        state["goal"] = goal
-        if not state.get("phase"):
-            state["phase"] = "intake"
-        if not state.get("next_action"):
-            state["next_action"] = "Start intake"
-        self.store.save_state(state)
+        if init_state:
+            state["goal"] = goal
+            if not state.get("phase"):
+                state["phase"] = "intake"
+            if not state.get("next_action"):
+                state["next_action"] = "Start intake"
+            self.store.save_state(state)
 
         for _ in range(self.max_steps):
             self.step_count += 1
@@ -137,21 +143,16 @@ class BatchRunner:
 
         return state
 
-    def run_supervised(
+    def _make_supervised_worker(
         self,
         goal: str,
         engine: "Engine",
         pack_builder: "ContextPackBuilder",
-    ) -> dict[str, Any]:
-        """Run supervised execution: one context pack + one model call per step.
-
-        Each step builds a fresh context pack, calls the engine with
-        ``max_turns=1``, records tool calls/results, writes a StepResult
-        artifact, and transitions phase.
-        """
+    ) -> dict[str, Callable[[dict[str, Any]], None]]:
+        """Factory for supervised workers (one context pack + one model call per step)."""
         engine.set_max_turns(1)
 
-        def _make_worker(phase: str) -> Callable[[dict[str, Any]], None]:
+        def _worker_for_phase(phase: str) -> Callable[[dict[str, Any]], None]:
             def worker(state: dict[str, Any]) -> None:
                 # Load latest PlanGraph if available
                 plan_graph = None
@@ -237,8 +238,8 @@ class BatchRunner:
 
             return worker
 
-        workers = {
-            phase: _make_worker(phase)
+        return {
+            phase: _worker_for_phase(phase)
             for phase in (
                 "intake",
                 "plan",
@@ -249,7 +250,50 @@ class BatchRunner:
                 "review",
             )
         }
+
+    def run_supervised(
+        self,
+        goal: str,
+        engine: "Engine",
+        pack_builder: "ContextPackBuilder",
+    ) -> dict[str, Any]:
+        """Run supervised execution: one context pack + one model call per step."""
+        workers = self._make_supervised_worker(goal, engine, pack_builder)
         return self.run(goal, workers=workers)
+
+    def resume_supervised(
+        self,
+        goal: str,
+        engine: "Engine",
+        pack_builder: "ContextPackBuilder",
+    ) -> dict[str, Any]:
+        """Resume supervised execution from saved runtime state.
+
+        Loads the existing state, finds the last safe step, and continues.
+        If the saved phase is terminal (done/blocked), returns immediately.
+        """
+        state = self.store.load_state()
+        phase = state.get("phase", "intake")
+
+        if phase in self.TERMINAL_PHASES:
+            return state
+
+        # Infer the highest step number from existing artifacts so numbering
+        # continues monotonically.
+        existing = self.store.list_artifacts()
+        step_artifacts = [
+            a for a in existing if a.startswith("step-result-") and a.endswith(".json")
+        ]
+        if step_artifacts:
+            # Sort by numeric suffix; e.g. step-result-003.json -> 3
+            last = sorted(step_artifacts)[-1]
+            try:
+                self.step_count = int(last[len("step-result-") : -len(".json")])
+            except ValueError:
+                self.step_count = 0
+
+        workers = self._make_supervised_worker(goal, engine, pack_builder)
+        return self.run(goal, workers=workers, init_state=False)
 
     # ------------------------------------------------------------------
     # Internal helpers

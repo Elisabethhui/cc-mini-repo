@@ -202,3 +202,19 @@ class RuntimeStateStore:
         if not self._artifacts_dir.exists():
             return []
         return sorted(p.name for p in self._artifacts_dir.iterdir() if p.is_file())
+
+    # ------------------------------------------------------------------
+    # Run discovery
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def list_runs(cls, workspace_root: str | Path) -> list[str]:
+        """Return a sorted list of run IDs under ``.ai-dev/runtime/``."""
+        runtime_dir = Path(workspace_root).expanduser().resolve() / ".ai-dev" / "runtime"
+        if not runtime_dir.exists():
+            return []
+        return sorted(
+            p.name
+            for p in runtime_dir.iterdir()
+            if p.is_dir() and (p / "state.json").exists()
+        )

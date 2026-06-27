@@ -868,6 +868,88 @@ def _cmd_workflow_run(ctx: CommandContext, args: str) -> None:
     )
 
 
+def _cmd_workflow_resume(ctx: CommandContext, args: str) -> None:
+    """Resume a bounded workflow run from saved runtime state."""
+    from .batch_runner import BatchRunner
+    from .context_pack import ContextPackBuilder
+    from .runtime_state import RuntimeStateStore
+
+    run_id = args.strip()
+    workspace = Path.cwd()
+
+    if not run_id:
+        # List available runs
+        runs = RuntimeStateStore.list_runs(workspace)
+        if not runs:
+            ctx.console.print("[dim]No workflow runs found. Use /workflow-run <goal> to start.[/dim]")
+            return
+        ctx.console.print("[bold]Available workflow runs:[/bold]")
+        for r in runs:
+            ctx.console.print(f"  • {r}")
+        ctx.console.print("[dim]Usage: /workflow-resume <run-id>[/dim]")
+        return
+
+    # Validate run exists
+    run_dir = workspace / ".ai-dev" / "runtime" / run_id
+    if not (run_dir / "state.json").exists():
+        ctx.console.print(f"[red]Run not found: {run_id}[/red]")
+        return
+
+    store = RuntimeStateStore(str(workspace), run_id=run_id)
+    state = store.load_state()
+    phase = state.get("phase", "intake")
+    goal = state.get("goal", "")
+
+    if phase == "done":
+        ctx.console.print(f"[green]✓[/green] Run {run_id} is already complete.")
+        ctx.console.print(f"[dim]  Phase: done[/dim]")
+        return
+
+    if phase == "blocked":
+        ctx.console.print(f"[yellow]⚠[/yellow] Run {run_id} is blocked.")
+        ctx.console.print(f"[dim]  Reason: {state.get('next_action', 'Unknown')}[/dim]")
+        ctx.console.print("[dim]  Resolve the blocker, then retry.[/dim]")
+        return
+
+    if not goal:
+        ctx.console.print(f"[red]Run {run_id} has no goal. Cannot resume.[/red]")
+        return
+
+    # Show resume summary
+    artifacts = store.list_artifacts()
+    step_results = [a for a in artifacts if a.startswith("step-result-")]
+    ctx.console.print(f"[dim]Resuming run {run_id} from phase '{phase}'…[/dim]")
+    ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
+    ctx.console.print(f"[dim]  Previous steps: {len(step_results)}[/dim]")
+
+    # Rebuild context pack and continue
+    builder = ContextPackBuilder(
+        context_window=32768,
+        reserved_output_tokens=2048,
+        safety_margin_tokens=1024,
+    )
+    runner = BatchRunner(
+        store,
+        max_steps=7,
+        context_window=32768,
+        reserved_output_tokens=2048,
+        safety_margin_tokens=1024,
+    )
+
+    engine = ctx.engine
+    final = runner.resume_supervised(
+        goal=goal,
+        engine=engine,
+        pack_builder=builder,
+    )
+
+    ctx.console.print(
+        f"[green]✓[/green] Resume complete: [bold]{run_id}[/bold]"
+    )
+    ctx.console.print(f"[dim]  Final phase: {final.get('phase')}[/dim]")
+    ctx.console.print(f"[dim]  Next action: {final.get('next_action')}[/dim]")
+
+
 def _workflow_test_inputs(args: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     explicit = tuple(part for part in args.split() if part)
     if explicit:
@@ -1622,6 +1704,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
     ("workflow-pack", "Generate bounded context pack for a goal [goal|task-id]", _cmd_workflow_pack),
     ("workflow-run", "Run a bounded batch execution plan [--dry-run] [goal]", _cmd_workflow_run),
+    ("workflow-resume", "Resume a workflow run from saved state [run-id]", _cmd_workflow_resume),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
     ("plan-status", "Show current planning phase and open items", _cmd_plan_status),

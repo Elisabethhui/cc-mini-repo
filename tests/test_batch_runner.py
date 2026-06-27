@@ -366,3 +366,122 @@ def test_run_supervised_respects_budget_hard_stop(tmp_path):
     # First step hits hard_stop -> blocked
     assert final["phase"] == "blocked"
     assert "hard_stop" in final["next_action"].lower() or "budget" in final["next_action"].lower()
+
+
+def test_resume_supervised_continues_from_saved_phase(tmp_path):
+    """Resume should pick up from the phase stored in runtime state."""
+    from unittest.mock import MagicMock, patch
+    from core.engine import Engine
+    from core.tools.base import Tool, ToolResult
+    from core.permissions import PermissionChecker
+    from core.context_pack import ContextPackBuilder
+
+    class NoopTool(Tool):
+        name = "Noop"
+        description = "Noop"
+        input_schema = {"type": "object", "properties": {}}
+
+        def execute(self) -> ToolResult:
+            return ToolResult(content="ok")
+
+    engine = Engine(
+        tools=[NoopTool()],
+        system_prompt="test",
+        permission_checker=PermissionChecker(auto_approve=True),
+        max_tokens=1000,
+        context_window=100_000,
+    )
+
+    stream = MagicMock()
+    stream.__enter__ = MagicMock(return_value=stream)
+    stream.__exit__ = MagicMock(return_value=False)
+    stream.text_stream = iter(["step output"])
+    final_msg = MagicMock()
+    final_msg.content = [MagicMock(type="text", text="step output")]
+    stream.get_final_message = MagicMock(return_value=final_msg)
+
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    # Pre-seed state at "plan" phase with prior step artifacts
+    store.save_state({
+        "run_id": "test",
+        "phase": "plan",
+        "goal": "Build feature X",
+        "next_action": "Plan the implementation",
+        "decisions": [],
+        "open_questions": [],
+        "artifacts": [],
+        "budget_reports": [],
+        "current_step": "",
+        "created_at": "2024-01-01T00:00:00",
+        "updated_at": "2024-01-01T00:00:00",
+    })
+    store.write_artifact("step-result-001.json", '{"step_number": 1}')
+    store.write_artifact("step-result-002.json", '{"step_number": 2}')
+
+    runner = BatchRunner(store, max_steps=3, context_window=32768)
+    builder = ContextPackBuilder(context_window=32768)
+
+    with patch.object(engine._client, "stream_messages", return_value=stream) as mock_stream:
+        final = runner.resume_supervised(
+            goal="Build feature X",
+            engine=engine,
+            pack_builder=builder,
+        )
+
+    # Should continue from plan -> retrieve -> pack -> implement (3 steps)
+    assert mock_stream.call_count == 3
+    assert runner.step_count == 5  # continued from 2 -> 3,4,5
+    assert final["phase"] == "implement"
+
+
+def test_resume_supervised_returns_terminal_state_without_calling_model(tmp_path):
+    """Resuming a run that is already done or blocked should not call the model."""
+    from unittest.mock import MagicMock, patch
+    from core.engine import Engine
+    from core.tools.base import Tool, ToolResult
+    from core.permissions import PermissionChecker
+    from core.context_pack import ContextPackBuilder
+
+    class NoopTool(Tool):
+        name = "Noop"
+        description = "Noop"
+        input_schema = {"type": "object", "properties": {}}
+
+        def execute(self) -> ToolResult:
+            return ToolResult(content="ok")
+
+    engine = Engine(
+        tools=[NoopTool()],
+        system_prompt="test",
+        permission_checker=PermissionChecker(auto_approve=True),
+        max_tokens=1000,
+        context_window=100_000,
+    )
+
+    store = RuntimeStateStore(str(tmp_path), run_id="test")
+    store.save_state({
+        "run_id": "test",
+        "phase": "blocked",
+        "goal": "Build feature X",
+        "next_action": "Hard stop: budget",
+        "decisions": [],
+        "open_questions": [],
+        "artifacts": [],
+        "budget_reports": [],
+        "current_step": "",
+        "created_at": "2024-01-01T00:00:00",
+        "updated_at": "2024-01-01T00:00:00",
+    })
+
+    runner = BatchRunner(store, max_steps=3, context_window=32768)
+    builder = ContextPackBuilder(context_window=32768)
+
+    with patch.object(engine._client, "stream_messages") as mock_stream:
+        final = runner.resume_supervised(
+            goal="Build feature X",
+            engine=engine,
+            pack_builder=builder,
+        )
+
+    mock_stream.assert_not_called()
+    assert final["phase"] == "blocked"
