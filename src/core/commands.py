@@ -775,6 +775,175 @@ def _cmd_prime(ctx: CommandContext, args: str) -> None:
     ctx.console.print(f"[dim]  - Primary symbols: {len(taskpack.primary_symbols)}[/dim]")
 
 
+def _cmd_plan_init(ctx: CommandContext, args: str) -> None:
+    """Initialize a new planning run with an empty PlanGraph."""
+    from .plan_graph import PlanGraph
+    from .runtime_state import RuntimeStateStore
+
+    goal = args.strip()
+    if not goal:
+        ctx.console.print("[dim]Usage: /plan-init <goal>[/dim]")
+        return
+
+    workspace = str(Path.cwd())
+    store = RuntimeStateStore(workspace)
+    run_id = store.run_id
+
+    graph = PlanGraph(
+        run_id=run_id,
+        goal=goal,
+        phase="intake",
+        next_action="Refine goal into project charter",
+    )
+
+    # Persist runtime state (creates directories)
+    store.patch_state(goal=goal, phase="intake", next_action="Refine goal into project charter")
+
+    # Persist PlanGraph
+    plan_path = store.base_dir / "plan-graph.json"
+    plan_path.write_text(graph.to_json(), encoding="utf-8")
+
+    ctx.console.print(f"[green]✓[/green] Plan initialized: [bold]{run_id}[/bold]")
+    ctx.console.print(f"[dim]  Goal: {goal}[/dim]")
+    ctx.console.print(f"[dim]  Phase: intake[/dim]")
+    ctx.console.print(f"[dim]  Next: Refine goal into project charter[/dim]")
+    ctx.console.print(f"[dim]  Path: {plan_path}[/dim]")
+
+
+def _cmd_plan_status(ctx: CommandContext, args: str) -> None:
+    """Show current planning phase, decisions, open questions, and next action."""
+    from .plan_graph import PlanGraph
+
+    workspace = str(Path.cwd())
+    runtime_dir = Path(workspace) / ".ai-dev" / "runtime"
+    if not runtime_dir.exists():
+        ctx.console.print("[dim]No planning runs found. Use /plan-init <goal> to start.[/dim]")
+        return
+
+    run_dirs = sorted(
+        (p for p in runtime_dir.iterdir() if p.is_dir()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    if not run_dirs:
+        ctx.console.print("[dim]No planning runs found. Use /plan-init <goal> to start.[/dim]")
+        return
+
+    latest_run = run_dirs[0]
+    plan_path = latest_run / "plan-graph.json"
+
+    if not plan_path.exists():
+        ctx.console.print(f"[dim]No plan graph found in latest run ({latest_run.name}).[/dim]")
+        return
+
+    graph = PlanGraph.from_json(plan_path.read_text(encoding="utf-8"))
+
+    ctx.console.print(f"[bold]Plan Status[/bold] ([dim]{graph.run_id}[/dim])")
+    ctx.console.print(f"  Phase: [cyan]{graph.phase}[/cyan]")
+    ctx.console.print(f"  Goal: {graph.goal}")
+    if graph.next_action:
+        ctx.console.print(f"  Next Action: [yellow]{graph.next_action}[/yellow]")
+
+    if graph.decisions:
+        ctx.console.print(f"\n[bold]Decisions ({len(graph.decisions)}):[/bold]")
+        for d in graph.decisions:
+            ctx.console.print(f"  • {d}")
+
+    if graph.open_questions:
+        ctx.console.print(f"\n[bold]Open Questions ({len(graph.open_questions)}):[/bold]")
+        for q in graph.open_questions:
+            ctx.console.print(f"  • {q}")
+
+    if graph.risks:
+        ctx.console.print(f"\n[bold]Risks ({len(graph.risks)}):[/bold]")
+        for r in graph.risks:
+            ctx.console.print(f"  • {r}")
+
+    if graph.task_dag:
+        ready = graph.ready_tasks()
+        ctx.console.print(f"\n[bold]Tasks:[/bold] {len(graph.task_dag)} total, {len(ready)} ready")
+        for t in ready[:5]:
+            ctx.console.print(f"  [green]•[/green] {t.id}: {t.goal}")
+        if len(ready) > 5:
+            ctx.console.print(f"  ... and {len(ready) - 5} more ready")
+
+
+def _cmd_plan_export(ctx: CommandContext, args: str) -> None:
+    """Export a compact planning summary."""
+    from .plan_graph import PlanGraph
+    from .runtime_state import RuntimeStateStore
+
+    workspace = str(Path.cwd())
+    runtime_dir = Path(workspace) / ".ai-dev" / "runtime"
+    if not runtime_dir.exists():
+        ctx.console.print("[dim]No planning runs found. Use /plan-init <goal> to start.[/dim]")
+        return
+
+    run_dirs = sorted(
+        (p for p in runtime_dir.iterdir() if p.is_dir()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    if not run_dirs:
+        ctx.console.print("[dim]No planning runs found. Use /plan-init <goal> to start.[/dim]")
+        return
+
+    latest_run = run_dirs[0]
+    plan_path = latest_run / "plan-graph.json"
+
+    if not plan_path.exists():
+        ctx.console.print(f"[dim]No plan graph found in latest run ({latest_run.name}).[/dim]")
+        return
+
+    graph = PlanGraph.from_json(plan_path.read_text(encoding="utf-8"))
+
+    # Build compact summary
+    lines = [
+        f"# Plan Export: {graph.run_id}",
+        "",
+        f"**Goal:** {graph.goal}",
+        f"**Phase:** {graph.phase}",
+        f"**Next Action:** {graph.next_action}",
+        "",
+    ]
+
+    if graph.decisions:
+        lines.append("## Decisions")
+        for d in graph.decisions:
+            lines.append(f"- {d}")
+        lines.append("")
+
+    if graph.open_questions:
+        lines.append("## Open Questions")
+        for q in graph.open_questions:
+            lines.append(f"- {q}")
+        lines.append("")
+
+    if graph.modules:
+        lines.append("## Modules")
+        for m in graph.modules:
+            lines.append(f"- {m}")
+        lines.append("")
+
+    if graph.task_dag:
+        lines.append("## Tasks")
+        for t in graph.topological_order():
+            status = "ready" if not t.depends_on else "blocked"
+            lines.append(f"- ({status}) {t.id}: {t.goal}")
+        lines.append("")
+
+    summary = "\n".join(lines)
+
+    # Also save as artifact
+    store = RuntimeStateStore(workspace, run_id=latest_run.name)
+    artifact_path = store.write_artifact("plan-export.md", summary)
+
+    ctx.console.print("[green]✓[/green] Plan exported")
+    ctx.console.print(f"[dim]  Saved to: {artifact_path}[/dim]")
+    ctx.console.print("")
+    ctx.console.print(summary)
+
+
 def _cmd_plan_wiki(ctx: CommandContext, args: str) -> None:
     """Generate a structured plan for the phase1 wiki_strict analysis chain."""
     from .wiki.taskpack import TaskPackManager, EditSpec, TaskStatus
@@ -1215,6 +1384,9 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-doctor", "Read-only workflow diagnostics", _cmd_workflow_doctor),
     ("workflow-test", "Read-only test recommendations from changed files", _cmd_workflow_test),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
+    ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
+    ("plan-status", "Show current planning phase and open items", _cmd_plan_status),
+    ("plan-export", "Export a compact planning summary", _cmd_plan_export),
     ("scan",       "Phase1 scan workspace and refresh wiki entities", _cmd_scan),
     ("digest",     "Digest file or --changed for the analysis chain", _cmd_digest),
     ("reconcile", "Later-phase view-only reconcile projection", _cmd_reconcile),

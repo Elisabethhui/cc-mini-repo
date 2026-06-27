@@ -23,6 +23,9 @@ def test_help_lists_phase1_and_later_phase_commands():
     assert "/scan" in output
     assert "/prime" in output
     assert "/plan" in output
+    assert "/plan-init" in output
+    assert "/plan-status" in output
+    assert "/plan-export" in output
     assert "/task" in output
     assert "/reconcile" in output
     assert "/maintenance" in output
