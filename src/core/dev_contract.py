@@ -110,6 +110,11 @@ class TaskSpec:
             if verif_errors:
                 errors.extend(verif_errors)
 
+            if self.verification.kind == "manual":
+                errors.append("executable task cannot use verification kind='manual'")
+            if self.task_kind == "coding" and self.verification.kind == "contract":
+                errors.append("coding task cannot use verification kind='contract'")
+
             if self.task_kind == "coding" and not self.allowed_files:
                 has_boundary_risk = any(
                     "boundary" in r.lower() or "boundaries" in r.lower()
