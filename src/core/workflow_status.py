@@ -106,13 +106,13 @@ def check_codegraph(root: Path) -> tuple[CheckResult, ...]:
     return (
         CheckResult(
             name="codegraph command",
-            ok=command_available,
-            detail="available" if command_available else "not installed",
+            ok=True,
+            detail="available" if command_available else "not installed (optional)",
         ),
         CheckResult(
             name=".codegraph/",
-            ok=codegraph_dir.exists(),
-            detail="present" if codegraph_dir.exists() else "not initialized",
+            ok=True,
+            detail="present" if codegraph_dir.exists() else "not initialized (optional)",
         ),
     )
 
@@ -120,7 +120,13 @@ def check_codegraph(root: Path) -> tuple[CheckResult, ...]:
 def check_git_state(root: Path, git_summary: GitSummary | None = None) -> tuple[CheckResult, ...]:
     summary = git_summary or _get_git_summary(root)
     if not summary.available:
-        return (CheckResult(name="git status", ok=False, detail=summary.error or "git unavailable"),)
+        return (
+            CheckResult(
+                name="git status",
+                ok=True,
+                detail=f"{summary.error or 'git unavailable'} (optional)",
+            ),
+        )
     return (
         CheckResult(
             name="git status",

@@ -58,8 +58,9 @@ def test_collect_workflow_status_reports_missing_paths(monkeypatch, tmp_path):
 
     assert status.ok is False
     assert any(not item.ok and item.name == ".ai-dev/README.md" for item in status.required_files)
-    assert any(not item.ok and item.name == ".codegraph/" for item in status.ignored_paths)
-    assert any(not item.ok and item.name == "codegraph command" for item in status.codegraph)
+    # CodeGraph is optional and should not hard-fail
+    assert any(item.ok and item.name == "codegraph command" for item in status.codegraph)
+    assert any(item.ok and item.name == ".codegraph/" for item in status.codegraph)
 
 
 def test_collect_workflow_status_warns_for_local_artifacts(monkeypatch, tmp_path):
@@ -92,10 +93,11 @@ def test_collect_workflow_status_handles_git_unavailable(monkeypatch, tmp_path):
 
     status = collect_workflow_status(tmp_path)
 
-    assert status.ok is False
+    # Git absence is optional and should not make status fail by itself
     assert status.git_summary is not None
     assert status.git_summary.available is False
-    assert status.git[0].detail == "git not installed"
+    assert status.git[0].ok is True
+    assert "optional" in status.git[0].detail
 
 
 def test_format_workflow_status_is_stable(monkeypatch, tmp_path):
@@ -119,3 +121,59 @@ def test_format_workflow_status_is_stable(monkeypatch, tmp_path):
     assert "Git:" in text
     assert "Warnings:" in text
     assert ".ai-dev/tmp/state.md" in text
+
+
+def test_workflow_status_required_files_pass_after_init(monkeypatch, tmp_path):
+    from core.workflow_init import init_workflow_scaffold
+
+    init_workflow_scaffold(tmp_path)
+
+    monkeypatch.setattr("core.workflow_status.shutil.which", lambda name: f"/usr/bin/{name}")
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr("core.workflow_status.subprocess.run", lambda *args, **kwargs: Result())
+
+    status = collect_workflow_status(tmp_path)
+
+    assert all(item.ok for item in status.required_files)
+
+
+def test_workflow_status_codegraph_optional(monkeypatch, tmp_path):
+    from core.workflow_init import init_workflow_scaffold
+
+    init_workflow_scaffold(tmp_path)
+
+    monkeypatch.setattr("core.workflow_status.shutil.which", lambda name: None if name == "codegraph" else f"/usr/bin/{name}")
+
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr("core.workflow_status.subprocess.run", lambda *args, **kwargs: Result())
+
+    status = collect_workflow_status(tmp_path)
+
+    codegraph_checks = {item.name: item for item in status.codegraph}
+    assert codegraph_checks["codegraph command"].ok is True
+    assert "optional" in codegraph_checks["codegraph command"].detail
+    assert codegraph_checks[".codegraph/"].ok is True
+    assert "optional" in codegraph_checks[".codegraph/"].detail
+
+
+def test_workflow_status_non_git_directory_does_not_crash(monkeypatch, tmp_path):
+    from core.workflow_init import init_workflow_scaffold
+
+    init_workflow_scaffold(tmp_path)
+
+    monkeypatch.setattr("core.workflow_status.shutil.which", lambda name: None if name == "git" else f"/usr/bin/{name}")
+
+    status = collect_workflow_status(tmp_path)
+
+    git_checks = {item.name: item for item in status.git}
+    assert git_checks["git status"].ok is True
+    assert "optional" in git_checks["git status"].detail

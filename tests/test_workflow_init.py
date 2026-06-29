@@ -64,6 +64,44 @@ def test_init_workflow_scaffold_reports_conflicts(tmp_path):
     assert conflict.read_text(encoding="utf-8") == "not a directory\n"
 
 
+def test_init_workflow_scaffold_creates_agents_md(tmp_path):
+    result = init_workflow_scaffold(tmp_path)
+
+    assert "AGENTS.md" in result.created
+    assert (tmp_path / "AGENTS.md").exists()
+    assert "context-bounded" in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+
+
+def test_init_workflow_scaffold_creates_skills_gitkeep(tmp_path):
+    result = init_workflow_scaffold(tmp_path)
+
+    assert ".ai-dev/skills/.gitkeep" in result.created
+    assert (tmp_path / ".ai-dev" / "skills" / ".gitkeep").exists()
+    assert (tmp_path / ".ai-dev" / "skills").is_dir()
+
+
+def test_init_workflow_scaffold_preserves_existing_agents_md(tmp_path):
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text("existing rules\n", encoding="utf-8")
+
+    result = init_workflow_scaffold(tmp_path)
+
+    assert "AGENTS.md" in result.skipped
+    assert agents.read_text(encoding="utf-8") == "existing rules\n"
+
+
+def test_init_workflow_scaffold_preserves_existing_skills_dir(tmp_path):
+    skills_dir = tmp_path / ".ai-dev" / "skills"
+    skills_dir.mkdir(parents=True)
+    skills_dir.joinpath("my-skill.md").write_text("skill\n", encoding="utf-8")
+
+    result = init_workflow_scaffold(tmp_path)
+
+    assert ".ai-dev/skills/.gitkeep" in result.created
+    assert skills_dir.joinpath("my-skill.md").read_text(encoding="utf-8") == "skill\n"
+    assert skills_dir.is_dir()
+
+
 def test_format_workflow_init_result_is_stable(tmp_path):
     result = init_workflow_scaffold(tmp_path, dry_run=True)
 
@@ -72,8 +110,10 @@ def test_format_workflow_init_result_is_stable(tmp_path):
     expected = """Workflow init dry run
 
 Created:
+- AGENTS.md
 - .ai-dev/README.md
 - .ai-dev/WORKFLOW.md
+- .ai-dev/skills/.gitkeep
 - .ai-dev/templates/CURRENT_TASK.md
 - .ai-dev/templates/CONTEXT_PACK.md
 - .ai-dev/templates/TEST_GATE.md

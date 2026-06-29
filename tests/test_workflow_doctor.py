@@ -142,3 +142,19 @@ def test_format_workflow_doctor_report_is_stable(monkeypatch, tmp_path):
     assert "- [FAIL] .ai-dev/tmp/state.md (local workflow artifact tracked by git)" in text
     assert "- [WARN] codegraph command (not installed)" in text
     assert "Decision: fail" in text
+
+
+def test_workflow_doctor_non_git_directory_after_init(monkeypatch, tmp_path):
+    from core.workflow_init import init_workflow_scaffold
+
+    init_workflow_scaffold(tmp_path)
+
+    monkeypatch.setattr("core.workflow_doctor.shutil.which", lambda name: None if name == "git" else f"/usr/bin/{name}")
+
+    report = collect_workflow_doctor_report(tmp_path)
+
+    # Git absence should be a warning, not a crash or block
+    assert report.decision in ("ok", "warn")
+    git_artifacts = [c for c in report.local_artifacts if c.name == "git status"]
+    assert git_artifacts
+    assert git_artifacts[0].severity == "warn"

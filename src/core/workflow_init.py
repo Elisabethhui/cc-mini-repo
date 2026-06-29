@@ -12,6 +12,13 @@ class ScaffoldFile:
 
 WORKFLOW_SCAFFOLD: tuple[ScaffoldFile, ...] = (
     ScaffoldFile(
+        rel_path="AGENTS.md",
+        content=(
+            "# Agent Development Guide\n\n"
+            "This repository uses the context-bounded development workflow.\n"
+        ),
+    ),
+    ScaffoldFile(
         rel_path=".ai-dev/README.md",
         content="# AI Dev\n\nThis repository uses the context-bounded workflow scaffold.\n",
     ),
@@ -21,6 +28,10 @@ WORKFLOW_SCAFFOLD: tuple[ScaffoldFile, ...] = (
             "# Workflow\n\n"
             "Use `/workflow-status` to inspect the scaffold and `/workflow-init` to add missing files.\n"
         ),
+    ),
+    ScaffoldFile(
+        rel_path=".ai-dev/skills/.gitkeep",
+        content="",
     ),
     ScaffoldFile(
         rel_path=".ai-dev/templates/CURRENT_TASK.md",
