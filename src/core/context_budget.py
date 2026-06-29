@@ -45,6 +45,22 @@ class BudgetReport:
     state: BudgetState
     warnings: tuple[str, ...] = ()
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "context_window": self.context_window,
+            "system_prompt_tokens": self.system_prompt_tokens,
+            "tool_schema_tokens": self.tool_schema_tokens,
+            "message_tokens": self.message_tokens,
+            "packed_context_tokens": self.packed_context_tokens,
+            "tool_result_tokens": self.tool_result_tokens,
+            "reserved_output_tokens": self.reserved_output_tokens,
+            "safety_margin_tokens": self.safety_margin_tokens,
+            "projected_total_tokens": self.projected_total_tokens,
+            "available_input_tokens": self.available_input_tokens,
+            "state": self.state.value,
+            "warnings": list(self.warnings),
+        }
+
     @property
     def usage_ratio(self) -> float:
         """Fraction of context_window currently consumed."""
