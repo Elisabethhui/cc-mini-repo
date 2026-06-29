@@ -13,7 +13,7 @@ from .dev_contract import TaskResult, TaskSpec
 from .plan_graph import PlanGraph
 from .plan_task_bridge import PlanToTaskBridge
 from .runtime_state import RuntimeStateStore
-from .verification_runner import VerificationRunner, _is_safe_path, _resolve_within_workspace
+from .verification_runner import VerificationRunner, VerificationRunResult, _is_safe_path, _resolve_within_workspace
 
 if typing.TYPE_CHECKING:
     from .step_artifact_store import StepArtifactStore
@@ -105,6 +105,8 @@ class StepExecutor:
         verification_runner: VerificationRunner | None = None,
         task_store: TaskSpecStore | None = None,
         step_artifact_store: StepArtifactStore | None = None,
+        max_retries: int = 1,
+        retry_on_verification_failure: bool = True,
     ):
         self.workspace = workspace.resolve()
         self.runtime_store = runtime_store
@@ -114,6 +116,9 @@ class StepExecutor:
         self.verification_runner = verification_runner or VerificationRunner()
         self.task_store = task_store
         self.step_artifact_store = step_artifact_store
+        # Task 078: bounded retry. Clamp to [0, 1] so the runner can never loop.
+        self.max_retries = max(0, min(int(max_retries), 1))
+        self.retry_on_verification_failure = bool(retry_on_verification_failure)
 
     # ------------------------------------------------------------------
     # Public API
@@ -125,31 +130,26 @@ class StepExecutor:
         engine: Any,
         plan_graph: PlanGraph | None = None,
     ) -> TaskResult:
-        """Execute a TaskSpec and return a TaskResult."""
+        """Execute a TaskSpec with bounded retry and return a TaskResult."""
         if self.task_store is not None:
             self.task_store.save_task_spec(task_spec, allow_overwrite=True)
 
-        step_id = f"step-{task_spec.id}-{int(time.time())}"
-
-        # Step 1: Validate
+        # Initial validation / budget check on the original prompt.
         validation_errors = self._validate_task_spec(task_spec)
         if validation_errors:
             return self._blocked_result(
-                step_id=step_id,
+                step_id=f"step-{task_spec.id}-0-{int(time.time())}",
                 task_spec=task_spec,
                 risks=validation_errors,
                 next_action="Fix TaskSpec validation errors",
                 plan_graph=plan_graph,
             )
 
-        # Step 2: Build prompt
         prompt = self._build_prompt(task_spec)
-
-        # Step 3: Budget check
         budget_report = self._check_budget(prompt)
         if budget_report.state == BudgetState.HARD_STOP:
             return self._blocked_result(
-                step_id=step_id,
+                step_id=f"step-{task_spec.id}-0-{int(time.time())}",
                 task_spec=task_spec,
                 risks=[f"Budget hard-stop: {budget_report.state.value}"],
                 next_action="Reduce prompt size or increase context_window",
@@ -158,7 +158,7 @@ class StepExecutor:
             )
         if budget_report.state == BudgetState.SPLIT:
             return self._blocked_result(
-                step_id=step_id,
+                step_id=f"step-{task_spec.id}-0-{int(time.time())}",
                 task_spec=task_spec,
                 risks=[f"Budget split: {budget_report.state.value}"],
                 next_action="Split task into smaller steps",
@@ -166,7 +166,89 @@ class StepExecutor:
                 plan_graph=plan_graph,
             )
 
-        # Step 4: Engine call (at most once)
+        attempts = 0
+        retry_count = 0
+        final_task_result: TaskResult | None = None
+        final_verif_result: VerificationRunResult | None = None
+        final_changed_files: tuple[str, ...] = ()
+
+        while attempts <= self.max_retries:
+            attempts += 1
+            task_result, verif_result, changed_files = self._execute_single_attempt(
+                task_spec=task_spec,
+                engine=engine,
+                prompt=prompt,
+                attempt=attempts,
+                plan_graph=plan_graph,
+            )
+            final_task_result = task_result
+            final_verif_result = verif_result
+            final_changed_files = changed_files
+
+            # Only retry on genuine verification failures.
+            if task_result.status != "failed" or not self.retry_on_verification_failure:
+                break
+            if attempts > self.max_retries:
+                break
+            prompt = self._build_retry_prompt(
+                task_spec=task_spec,
+                failed_result=task_result,
+                failed_verif=verif_result,
+                changed_files=changed_files,
+            )
+            retry_count += 1
+
+        assert final_task_result is not None
+        assert final_verif_result is not None
+        final_task_result.attempts = attempts
+        final_task_result.retry_count = retry_count
+        final_task_result.final_test_passed = bool(final_verif_result.passed)
+        final_task_result.changed_files = list(final_changed_files)
+        return final_task_result
+
+    def _execute_single_attempt(
+        self,
+        task_spec: TaskSpec,
+        engine: Any,
+        prompt: str,
+        attempt: int,
+        plan_graph: PlanGraph | None = None,
+    ) -> tuple[TaskResult, VerificationRunResult, tuple[str, ...]]:
+        """Run one execution attempt and return its result plus verification details."""
+        step_id = f"step-{task_spec.id}-{attempt}-{int(time.time())}"
+
+        # Budget check on the prompt (important for retry prompts).
+        budget_report = self._check_budget(prompt)
+        if budget_report.state == BudgetState.HARD_STOP:
+            task_result = self._blocked_result(
+                step_id=step_id,
+                task_spec=task_spec,
+                risks=[f"Budget hard-stop: {budget_report.state.value}"],
+                next_action="Reduce prompt size or increase context_window",
+                budget_report=budget_report,
+                plan_graph=plan_graph,
+            )
+            return (
+                task_result,
+                VerificationRunResult(passed=False, skipped=True, risks=budget_report.warnings),
+                (),
+            )
+        if budget_report.state == BudgetState.SPLIT:
+            task_result = self._blocked_result(
+                step_id=step_id,
+                task_spec=task_spec,
+                risks=[f"Budget split: {budget_report.state.value}"],
+                next_action="Split task into smaller steps",
+                budget_report=budget_report,
+                plan_graph=plan_graph,
+            )
+            return (
+                task_result,
+                VerificationRunResult(passed=False, skipped=True, risks=budget_report.warnings),
+                (),
+            )
+
+        # Engine call
         events: list[tuple] = []
         assistant_text = ""
         tool_calls: list[dict] = []
@@ -181,7 +263,7 @@ class StepExecutor:
                         "input": event[2] if len(event) > 2 else {},
                     })
         except Exception as exc:
-            return self._blocked_result(
+            task_result = self._blocked_result(
                 step_id=step_id,
                 task_spec=task_spec,
                 risks=[f"Engine error: {exc}"],
@@ -189,11 +271,16 @@ class StepExecutor:
                 budget_report=budget_report,
                 plan_graph=plan_graph,
             )
+            return (
+                task_result,
+                VerificationRunResult(passed=False, skipped=True, risks=[f"Engine error: {exc}"]),
+                (),
+            )
 
-        # Step 5: Detect changed files (from git or filesystem, NOT assistant text)
+        # Detect changed files from git or filesystem, NOT assistant text.
         changed_files = self._detect_changed_files(task_spec.allowed_files)
 
-        # Step 6: Check forbidden / out-of-bounds modifications
+        # Check forbidden / out-of-bounds modifications.
         scope_risks: list[str] = []
         forbidden_modified = [f for f in changed_files if f in task_spec.forbidden_files]
         if forbidden_modified:
@@ -206,13 +293,13 @@ class StepExecutor:
         if out_of_bounds:
             scope_risks.append(f"Out-of-bounds files modified: {out_of_bounds}")
 
-        # Step 7: Run verification
+        # Run verification
         verif_result = self.verification_runner.run(
             task_spec.verification,
             self.workspace,
         )
 
-        # Step 8: Determine final status
+        # Determine status
         if forbidden_modified or out_of_bounds:
             status = "blocked"
         elif verif_result.passed:
@@ -263,7 +350,7 @@ class StepExecutor:
             next_action=next_action,
         )
 
-        # Step 9: Persist artifacts
+        # Persist artifacts
         artifact_paths = self._persist_artifacts(
             step_id=step_id,
             prompt=prompt,
@@ -273,12 +360,10 @@ class StepExecutor:
             task_result=task_result,
         )
         step_result.prompt_path = str(artifact_paths.get("prompt", ""))
-        step_result.artifact_paths = [
-            str(p) for p in artifact_paths.values()
-        ]
+        step_result.artifact_paths = [str(p) for p in artifact_paths.values()]
         task_result.artifact_paths = step_result.artifact_paths
 
-        # Step 10: Update runtime state
+        # Update runtime state
         self._update_runtime_state(
             step_id=step_id,
             artifact_paths=list(artifact_paths.values()),
@@ -286,7 +371,7 @@ class StepExecutor:
             next_action=next_action,
         )
 
-        # Step 11: PlanGraph feedback
+        # PlanGraph feedback
         if plan_graph is not None:
             PlanToTaskBridge.update_plan_with_task_results(plan_graph, [task_result])
 
@@ -297,7 +382,74 @@ class StepExecutor:
             artifact_paths=list(artifact_paths.values()),
         )
 
-        return task_result
+        return task_result, verif_result, changed_files
+
+    def _build_retry_prompt(
+        self,
+        task_spec: TaskSpec,
+        failed_result: TaskResult,
+        failed_verif: VerificationRunResult,
+        changed_files: tuple[str, ...],
+    ) -> str:
+        """Build a bounded retry prompt from the previous failed attempt."""
+        stdout_summary = failed_verif.stdout[:2000] if failed_verif.stdout else "(none)"
+        stderr_summary = failed_verif.stderr[:2000] if failed_verif.stderr else "(none)"
+        risks_text = "\n".join(f"- {r}" for r in failed_result.risks) or "- (none)"
+        changed_text = "\n".join(f"- {f}" for f in changed_files) or "- (none)"
+        allowed_text = "\n".join(f"- {f}" for f in task_spec.allowed_files) or "- (none)"
+        forbidden_text = "\n".join(f"- {f}" for f in task_spec.forbidden_files) or "- (none)"
+
+        verif_lines = [
+            f"- kind: {task_spec.verification.kind}",
+            f"- expected_exit_code: {task_spec.verification.expected_exit_code}",
+        ]
+        if task_spec.verification.command:
+            verif_lines.append(f"- command: {' '.join(task_spec.verification.command)}")
+        if task_spec.verification.expected_artifacts:
+            verif_lines.append(
+                f"- expected_artifacts: {', '.join(task_spec.verification.expected_artifacts)}"
+            )
+
+        lines = [
+            "# Retry Task Execution",
+            "",
+            f"**Task ID:** {task_spec.id}",
+            f"**Goal:** {task_spec.goal}",
+            "",
+            "## Allowed Files",
+            allowed_text,
+            "",
+            "## Forbidden Files",
+            forbidden_text,
+            "",
+            "## Verification Spec",
+            *verif_lines,
+            "",
+            "## Previous Attempt Failure",
+            f"- status: {failed_result.status}",
+            f"- exit_code: {failed_verif.exit_code}",
+            f"- verification_passed: {failed_verif.passed}",
+            "",
+            "### stdout summary",
+            stdout_summary,
+            "",
+            "### stderr summary",
+            stderr_summary,
+            "",
+            "### changed_files",
+            changed_text,
+            "",
+            "### risks",
+            risks_text,
+            "",
+            "## Instructions",
+            "- Fix ONLY the failure reason shown above.",
+            "- Do NOT perform unrelated refactoring.",
+            "- Do NOT modify any file outside Allowed Files.",
+            "- Do NOT modify any Forbidden Files.",
+            "- After fixing, output a brief JSON summary with keys: status, changed_files, note.",
+        ]
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Internal helpers

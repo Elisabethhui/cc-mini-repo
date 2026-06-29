@@ -201,6 +201,15 @@ class TaskResult:
     next_action: str = ""
     risks: list[str] = field(default_factory=list)
     notes: str = ""
+    # Retry / review / worklog metadata (Task 078)
+    attempts: int = 1
+    retry_count: int = 0
+    final_test_passed: bool = False
+    review_decision: str = ""  # pass | revise | blocked
+    can_finish: bool = False
+    requires_user_commit: bool = False
+    worklog_path: str | None = None
+    test_result_paths: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -213,6 +222,14 @@ class TaskResult:
             "next_action": self.next_action,
             "risks": list(self.risks),
             "notes": self.notes,
+            "attempts": self.attempts,
+            "retry_count": self.retry_count,
+            "final_test_passed": self.final_test_passed,
+            "review_decision": self.review_decision,
+            "can_finish": self.can_finish,
+            "requires_user_commit": self.requires_user_commit,
+            "worklog_path": self.worklog_path,
+            "test_result_paths": list(self.test_result_paths),
         }
 
     @classmethod
@@ -227,6 +244,14 @@ class TaskResult:
             next_action=str(data.get("next_action", "")),
             risks=list(data.get("risks", [])),
             notes=str(data.get("notes", "")),
+            attempts=int(data.get("attempts", 1)),
+            retry_count=int(data.get("retry_count", 0)),
+            final_test_passed=bool(data.get("final_test_passed", False)),
+            review_decision=str(data.get("review_decision", "")),
+            can_finish=bool(data.get("can_finish", False)),
+            requires_user_commit=bool(data.get("requires_user_commit", False)),
+            worklog_path=data.get("worklog_path"),
+            test_result_paths=list(data.get("test_result_paths", [])),
         )
 
     def to_json(self) -> str:
@@ -234,4 +259,55 @@ class TaskResult:
 
     @classmethod
     def from_json(cls, text: str) -> TaskResult:
+        return cls.from_dict(json.loads(text))
+
+
+# ---------------------------------------------------------------------------
+# DevReviewResult
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DevReviewResult:
+    """Safe review decision produced after task execution.
+
+    Does not represent a commit decision; it only tells the caller whether
+    the task may finish and whether a human commit is required.
+    """
+
+    task_id: str
+    review_decision: str = ""  # pass | revise | blocked
+    can_finish: bool = False
+    requires_user_commit: bool = False
+    risks: list[str] = field(default_factory=list)
+    next_action: str = ""
+    worklog_path: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "review_decision": self.review_decision,
+            "can_finish": self.can_finish,
+            "requires_user_commit": self.requires_user_commit,
+            "risks": list(self.risks),
+            "next_action": self.next_action,
+            "worklog_path": self.worklog_path,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DevReviewResult:
+        return cls(
+            task_id=str(data.get("task_id", "")),
+            review_decision=str(data.get("review_decision", "")),
+            can_finish=bool(data.get("can_finish", False)),
+            requires_user_commit=bool(data.get("requires_user_commit", False)),
+            risks=list(data.get("risks", [])),
+            next_action=str(data.get("next_action", "")),
+            worklog_path=data.get("worklog_path"),
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False)
+
+    @classmethod
+    def from_json(cls, text: str) -> DevReviewResult:
         return cls.from_dict(json.loads(text))

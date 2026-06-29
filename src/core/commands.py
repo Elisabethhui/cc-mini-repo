@@ -1786,7 +1786,7 @@ def _show_dev_usage(ctx: CommandContext) -> None:
     ctx.console.print("  /dev <goal>          Plan candidate tasks (default)")
     ctx.console.print("  /dev --plan <goal>   Explicit plan mode")
     ctx.console.print("  /dev --dry-run <id>  Preview a task without executing")
-    ctx.console.print("  /dev --run <id>      Execute a validated task")
+    ctx.console.print("  /dev --run [--max-retries N|--no-retry] <id>  Execute a validated task")
     ctx.console.print("  /dev --status        Show task store status")
 
 
@@ -1897,12 +1897,49 @@ def _dev_dry_run(ctx: CommandContext, task_id: str) -> None:
             ctx.console.print(f"    Reason: dependencies not satisfied: {blocked_by}")
 
 
-def _dev_run(ctx: CommandContext, task_id: str) -> None:
+def _dev_run(ctx: CommandContext, raw_args: str) -> None:
     from .dev_task_runner import DevTaskRunner
     from .step_artifact_store import StepArtifactStore
     from .step_executor import StepExecutor
     from .task_spec_store import TaskSpecStore
     from .verification_runner import VerificationRunner
+
+    # Parse optional flags: --max-retries N, --no-retry
+    parts = raw_args.split()
+    max_retries = 1
+    no_retry = False
+    task_id = ""
+    i = 0
+    while i < len(parts):
+        part = parts[i]
+        if part == "--max-retries":
+            if i + 1 >= len(parts):
+                ctx.console.print("[dim]Usage: /dev --run [--max-retries N|--no-retry] <task-id>[/dim]")
+                return
+            try:
+                max_retries = int(parts[i + 1])
+            except ValueError:
+                ctx.console.print("[red]--max-retries requires an integer[/red]")
+                return
+            i += 2
+            continue
+        if part == "--no-retry":
+            no_retry = True
+            i += 1
+            continue
+        if not task_id:
+            task_id = part
+            i += 1
+            continue
+        ctx.console.print(f"[red]Unexpected argument: {part}[/red]")
+        return
+
+    if no_retry:
+        max_retries = 0
+
+    if not task_id:
+        _show_dev_usage(ctx)
+        return
 
     workspace = Path.cwd()
     runtime_store = _dev_latest_runtime_store(workspace)
@@ -1951,6 +1988,7 @@ def _dev_run(ctx: CommandContext, task_id: str) -> None:
         verification_runner=VerificationRunner(),
         task_store=task_store,
         step_artifact_store=step_artifact_store,
+        max_retries=max_retries,
     )
 
     runner = DevTaskRunner(
@@ -1960,6 +1998,7 @@ def _dev_run(ctx: CommandContext, task_id: str) -> None:
         step_artifact_store=step_artifact_store,
         runtime_store=runtime_store,
         max_steps=max_steps,
+        max_retries=max_retries,
     )
 
     result = runner.run_task(task_id=task_id, engine=ctx.engine)
@@ -1970,6 +2009,17 @@ def _dev_run(ctx: CommandContext, task_id: str) -> None:
     if result.terminal_task_id:
         ctx.console.print(f"  terminal_task_id: {result.terminal_task_id}")
         ctx.console.print(f"  terminal_status: {result.terminal_status}")
+    # Task 078: output retry / review / worklog metadata.
+    if result.task_results:
+        last = result.task_results[-1]
+        ctx.console.print(f"  attempts: {last.attempts}")
+        ctx.console.print(f"  retry_count: {last.retry_count}")
+        ctx.console.print(f"  final_test_passed: {last.final_test_passed}")
+    ctx.console.print(f"  review_decision: {result.review_decision}")
+    ctx.console.print(f"  can_finish: {result.can_finish}")
+    ctx.console.print(f"  requires_user_commit: {result.requires_user_commit}")
+    if result.worklog_path:
+        ctx.console.print(f"  worklog_path: {result.worklog_path}")
     if result.run_summary_path:
         ctx.console.print(f"  run_summary_path: {result.run_summary_path}")
     if result.next_action:

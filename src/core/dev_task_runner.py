@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from .dev_contract import TaskResult, TaskSpec
+from .dev_review import (
+    apply_review_to_task_result,
+    review_task_result,
+    write_dev_worklog,
+)
 from .plan_graph import PlanGraph
 from .runtime_state import RuntimeStateStore
 from .step_artifact_store import StepArtifactStore
@@ -41,6 +46,11 @@ class DevRunResult:
     next_action: str = ""
     risks: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Task 078: safe review metadata surfaced at run level
+    review_decision: str = ""
+    can_finish: bool = False
+    requires_user_commit: bool = False
+    worklog_path: str | None = None
 
     _TERMINAL_TASK_STATUSES = {"passed", "failed", "blocked", "split", "needs_planning"}
     _TERMINAL_RUN_STATUSES = {
@@ -69,6 +79,10 @@ class DevRunResult:
             "next_action": self.next_action,
             "risks": list(self.risks),
             "warnings": list(self.warnings),
+            "review_decision": self.review_decision,
+            "can_finish": self.can_finish,
+            "requires_user_commit": self.requires_user_commit,
+            "worklog_path": self.worklog_path,
         }
 
     @classmethod
@@ -89,6 +103,10 @@ class DevRunResult:
             next_action=str(data.get("next_action", "")),
             risks=list(data.get("risks", [])),
             warnings=list(data.get("warnings", [])),
+            review_decision=str(data.get("review_decision", "")),
+            can_finish=bool(data.get("can_finish", False)),
+            requires_user_commit=bool(data.get("requires_user_commit", False)),
+            worklog_path=data.get("worklog_path"),
         )
 
     def to_json(self) -> str:
@@ -124,6 +142,8 @@ class DevTaskRunner:
         runtime_store: RuntimeStateStore | None = None,
         plan_graph: PlanGraph | None = None,
         max_steps: int = 10,
+        max_retries: int = 1,
+        retry_on_verification_failure: bool = True,
     ):
         self.workspace = Path(workspace).expanduser().resolve()
         self.task_store = task_store
@@ -132,6 +152,9 @@ class DevTaskRunner:
         self.runtime_store = runtime_store
         self.plan_graph = plan_graph
         self.max_steps = max(1, int(max_steps))
+        # Task 078: bounded retry configuration forwarded to StepExecutor.
+        self.step_executor.max_retries = max(0, min(int(max_retries), 1))
+        self.step_executor.retry_on_verification_failure = bool(retry_on_verification_failure)
         self.run_id = self._resolve_run_id()
 
     # ------------------------------------------------------------------
@@ -181,6 +204,14 @@ class DevTaskRunner:
             result.warnings.append(
                 f"Runner stopped after {self.max_steps} steps without reaching a task terminal state"
             )
+
+        # Task 078: surface review metadata from the last executed task.
+        if result.task_results:
+            last = result.task_results[-1]
+            result.review_decision = last.review_decision
+            result.can_finish = last.can_finish
+            result.requires_user_commit = last.requires_user_commit
+            result.worklog_path = last.worklog_path
 
         self._collect_step_artifacts(result)
         self._update_runtime_state(result)
@@ -260,6 +291,12 @@ class DevTaskRunner:
         else:
             self._finalize_terminal_task(result, task_id, task_result)
 
+        # Task 078: surface review metadata on the run result.
+        result.review_decision = task_result.review_decision
+        result.can_finish = task_result.can_finish
+        result.requires_user_commit = task_result.requires_user_commit
+        result.worklog_path = task_result.worklog_path
+
         self._collect_step_artifacts(result)
         self._update_runtime_state(result)
         self._update_plan_graph(result)
@@ -333,6 +370,10 @@ class DevTaskRunner:
             "risks": list(result.risks),
             "warnings": list(result.warnings),
             "step_artifacts": list(result.step_artifacts),
+            "review_decision": result.review_decision,
+            "can_finish": result.can_finish,
+            "requires_user_commit": result.requires_user_commit,
+            "worklog_path": result.worklog_path,
         }
         path.write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
@@ -359,7 +400,7 @@ class DevTaskRunner:
         return sorted(ready, key=lambda s: s.id)
 
     def _execute_one(self, task_spec: TaskSpec, engine: Any) -> TaskResult:
-        """Execute a single task and ensure its result is persisted."""
+        """Execute a single task, persist its result, and produce review/worklog."""
         task_result = self.step_executor.execute_task(
             task_spec,
             engine,
@@ -367,6 +408,17 @@ class DevTaskRunner:
         )
         # Confirm the result is in the store even if the executor was not
         # configured with a task store.
+        self.task_store.save_task_result(task_result)
+
+        # Task 078: safe review + worklog.
+        review_result = review_task_result(task_result)
+        worklog_path = write_dev_worklog(
+            workspace=self.workspace,
+            run_id=self.run_id,
+            task_result=task_result,
+            review_result=review_result,
+        )
+        apply_review_to_task_result(task_result, review_result, worklog_path)
         self.task_store.save_task_result(task_result)
         return task_result
 
