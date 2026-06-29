@@ -1761,6 +1761,319 @@ class DemoClass:
     demo_file.unlink(missing_ok=True)
 
 
+# ---------------------------------------------------------------------------
+# /dev command
+# ---------------------------------------------------------------------------
+
+def _resolve_dev_runtime_params(ctx: CommandContext) -> tuple[int, int, int]:
+    """Return (context_window, reserved_output_tokens, safety_margin_tokens)."""
+    profile = ctx.app_config.runtime_profile
+    if profile is not None:
+        return (
+            profile.context_window,
+            profile.max_output_tokens,
+            profile.safety_margin_tokens,
+        )
+    return (
+        ctx.app_config.context_window or 32768,
+        ctx.app_config.max_output_tokens or 2048,
+        ctx.app_config.safety_margin_tokens or 1024,
+    )
+
+
+def _show_dev_usage(ctx: CommandContext) -> None:
+    ctx.console.print("[bold]/dev[/bold] — Safe development workflow")
+    ctx.console.print("  /dev <goal>          Plan candidate tasks (default)")
+    ctx.console.print("  /dev --plan <goal>   Explicit plan mode")
+    ctx.console.print("  /dev --dry-run <id>  Preview a task without executing")
+    ctx.console.print("  /dev --run <id>      Execute a validated task")
+    ctx.console.print("  /dev --status        Show task store status")
+
+
+def _dev_latest_runtime_store(workspace: Path) -> RuntimeStateStore | None:
+    """Find the latest runtime run under ``.ai-dev/runtime/``."""
+    from .runtime_state import RuntimeStateStore
+
+    runtime_dir = workspace / ".ai-dev" / "runtime"
+    if not runtime_dir.exists():
+        return None
+    run_dirs = sorted(
+        (p for p in runtime_dir.iterdir() if p.is_dir()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    if not run_dirs:
+        return None
+    return RuntimeStateStore(str(workspace), run_id=run_dirs[0].name)
+
+
+def _dev_plan(ctx: CommandContext, goal: str) -> None:
+    from .dev_planner import StrictDevPlanner
+    from .runtime_state import RuntimeStateStore
+    from .task_spec_store import TaskSpecStore
+
+    workspace = Path.cwd()
+    runtime_store = RuntimeStateStore(str(workspace))
+    task_store = TaskSpecStore(workspace=workspace, runtime_store=runtime_store)
+
+    context_window, reserved_output, safety_margin = _resolve_dev_runtime_params(ctx)
+
+    planner = StrictDevPlanner(
+        workspace=workspace,
+        task_store=task_store,
+        runtime_store=runtime_store,
+        context_window=context_window,
+        reserved_output_tokens=reserved_output,
+        safety_margin_tokens=safety_margin,
+    )
+
+    result = planner.plan_goal(goal=goal, planner_engine=ctx.engine)
+
+    ctx.console.print(f"[bold]/dev plan result:[/bold] {result.status}")
+    ctx.console.print(f"  run_id: {result.run_id}")
+    ctx.console.print(f"  candidate_count: {result.candidate_count}")
+    ctx.console.print(f"  valid_task_ids: {result.valid_task_ids}")
+    ctx.console.print(f"  invalid_candidate_count: {result.invalid_candidate_count}")
+    if result.status == "requires_review":
+        ctx.console.print("  [yellow]requires_user_review: True[/yellow]")
+    if result.next_action:
+        ctx.console.print(f"  next_action: {result.next_action}")
+    if result.warnings:
+        ctx.console.print("[yellow]Warnings:[/yellow]")
+        for w in result.warnings:
+            ctx.console.print(f"  • {w}")
+    if result.errors:
+        ctx.console.print("[red]Errors:[/red]")
+        for e in result.errors:
+            ctx.console.print(f"  • {e}")
+
+
+def _dev_dry_run(ctx: CommandContext, task_id: str) -> None:
+    from .task_spec_store import TaskSpecStore
+
+    workspace = Path.cwd()
+    runtime_store = _dev_latest_runtime_store(workspace)
+    if runtime_store is None:
+        ctx.console.print("[dim]No runs found. Use /dev <goal> to plan first.[/dim]")
+        return
+    task_store = TaskSpecStore(workspace=workspace, runtime_store=runtime_store)
+
+    spec = task_store.load_task_spec(task_id)
+    if spec is None:
+        ctx.console.print(f"[red]Task not found: {task_id}[/red]")
+        return
+
+    deps_ok = True
+    blocked_by: list[str] = []
+    for dep in spec.depends_on:
+        dep_result = task_store.load_task_result(dep)
+        if dep_result is None or dep_result.status != "passed":
+            deps_ok = False
+            blocked_by.append(dep)
+
+    ready = spec.executable and not spec.planning_required and deps_ok
+
+    ctx.console.print(f"[bold]/dev dry-run:[/bold] {task_id}")
+    ctx.console.print(f"  goal: {spec.goal}")
+    ctx.console.print(f"  task_kind: {spec.task_kind}")
+    ctx.console.print(f"  executable: {spec.executable}")
+    ctx.console.print(f"  planning_required: {spec.planning_required}")
+    ctx.console.print(f"  allowed_files: {spec.allowed_files}")
+    ctx.console.print(f"  forbidden_files: {spec.forbidden_files}")
+    ctx.console.print(f"  verification: {spec.verification.kind}")
+    if spec.verification.command:
+        ctx.console.print(f"    command: {' '.join(spec.verification.command)}")
+    ctx.console.print(f"  depends_on: {spec.depends_on}")
+    ctx.console.print(f"  context_budget: {spec.context_budget}")
+    if ready:
+        ctx.console.print("  [green]Ready to run[/green]")
+    else:
+        ctx.console.print("  [yellow]Not ready[/yellow]")
+        if not spec.executable:
+            ctx.console.print("    Reason: executable=False")
+        if spec.planning_required:
+            ctx.console.print("    Reason: planning_required=True")
+        if blocked_by:
+            ctx.console.print(f"    Reason: dependencies not satisfied: {blocked_by}")
+
+
+def _dev_run(ctx: CommandContext, task_id: str) -> None:
+    from .dev_task_runner import DevTaskRunner
+    from .step_artifact_store import StepArtifactStore
+    from .step_executor import StepExecutor
+    from .task_spec_store import TaskSpecStore
+    from .verification_runner import VerificationRunner
+
+    workspace = Path.cwd()
+    runtime_store = _dev_latest_runtime_store(workspace)
+    if runtime_store is None:
+        ctx.console.print("[dim]No runs found. Use /dev <goal> to plan first.[/dim]")
+        return
+    task_store = TaskSpecStore(workspace=workspace, runtime_store=runtime_store)
+
+    spec = task_store.load_task_spec(task_id)
+    if spec is None:
+        ctx.console.print(f"[red]Task not found: {task_id}[/red]")
+        return
+
+    if spec.planning_required:
+        ctx.console.print(
+            f"[red]Task {task_id} requires planning. Run /dev --plan first.[/red]"
+        )
+        return
+
+    if not spec.executable:
+        ctx.console.print(
+            f"[red]Task {task_id} is not executable. Run /dev --plan first.[/red]"
+        )
+        return
+
+    for dep in spec.depends_on:
+        dep_result = task_store.load_task_result(dep)
+        if dep_result is None or dep_result.status != "passed":
+            ctx.console.print(
+                f"[red]Task {task_id} blocked: dependency {dep} not passed.[/red]"
+            )
+            return
+
+    context_window, reserved_output, safety_margin = _resolve_dev_runtime_params(ctx)
+    max_steps = getattr(ctx.app_config, "max_steps", None) or 10
+
+    step_artifact_store = StepArtifactStore(
+        workspace=workspace, runtime_store=runtime_store
+    )
+    step_executor = StepExecutor(
+        workspace=workspace,
+        runtime_store=runtime_store,
+        context_window=context_window,
+        reserved_output_tokens=reserved_output,
+        safety_margin_tokens=safety_margin,
+        verification_runner=VerificationRunner(),
+        task_store=task_store,
+        step_artifact_store=step_artifact_store,
+    )
+
+    runner = DevTaskRunner(
+        workspace=workspace,
+        task_store=task_store,
+        step_executor=step_executor,
+        step_artifact_store=step_artifact_store,
+        runtime_store=runtime_store,
+        max_steps=max_steps,
+    )
+
+    result = runner.run_task(task_id=task_id, engine=ctx.engine)
+
+    ctx.console.print(f"[bold]/dev run result:[/bold] {result.status}")
+    ctx.console.print(f"  run_id: {result.run_id}")
+    ctx.console.print(f"  executed_task_ids: {result.executed_task_ids}")
+    if result.terminal_task_id:
+        ctx.console.print(f"  terminal_task_id: {result.terminal_task_id}")
+        ctx.console.print(f"  terminal_status: {result.terminal_status}")
+    if result.run_summary_path:
+        ctx.console.print(f"  run_summary_path: {result.run_summary_path}")
+    if result.next_action:
+        ctx.console.print(f"  next_action: {result.next_action}")
+    if result.warnings:
+        ctx.console.print("[yellow]Warnings:[/yellow]")
+        for w in result.warnings:
+            ctx.console.print(f"  • {w}")
+    if result.risks:
+        ctx.console.print("[yellow]Risks:[/yellow]")
+        for r in result.risks:
+            ctx.console.print(f"  • {r}")
+
+
+def _dev_status(ctx: CommandContext) -> None:
+    from collections import defaultdict
+
+    from .task_spec_store import TaskSpecStore
+
+    workspace = Path.cwd()
+    runtime_store = _dev_latest_runtime_store(workspace)
+    if runtime_store is None:
+        ctx.console.print("[dim]No runs found. Use /dev <goal> to plan first.[/dim]")
+        return
+    task_store = TaskSpecStore(workspace=workspace, runtime_store=runtime_store)
+
+    specs = task_store.list_task_specs()
+    if not specs:
+        ctx.console.print("[dim]No tasks in store. Use /dev <goal> to plan.[/dim]")
+        return
+
+    ctx.console.print(f"[bold]/dev status:[/bold] {len(specs)} tasks")
+
+    by_status: dict[str, list[str]] = defaultdict(list)
+    for spec in specs:
+        status = task_store.get_task_status(spec.id)
+        by_status[status].append(spec.id)
+
+    for status in (
+        "pending",
+        "ready",
+        "passed",
+        "failed",
+        "blocked",
+        "split",
+        "needs_planning",
+    ):
+        if status in by_status:
+            ctx.console.print(
+                f"  [cyan]{status}:[/cyan] {', '.join(sorted(by_status[status]))}"
+            )
+
+    try:
+        from .step_artifact_store import StepArtifactStore
+
+        step_store = StepArtifactStore(
+            workspace=workspace, runtime_store=runtime_store
+        )
+        for spec in specs:
+            latest = step_store.latest_step(spec.id)
+            if latest:
+                ctx.console.print(
+                    f"  [dim]{spec.id} latest step: {latest.get('step_id', '?')}[/dim]"
+                )
+    except Exception:
+        pass
+
+
+def _cmd_dev(ctx: CommandContext, args: str) -> None:
+    """Safe development command: plan, dry-run, run, or status."""
+    raw = args.strip()
+    if not raw:
+        _show_dev_usage(ctx)
+        return
+
+    if raw == "--plan":
+        _show_dev_usage(ctx)
+        return
+    if raw.startswith("--plan "):
+        _dev_plan(ctx, raw[7:].strip())
+        return
+
+    if raw == "--dry-run":
+        _show_dev_usage(ctx)
+        return
+    if raw.startswith("--dry-run "):
+        _dev_dry_run(ctx, raw[10:].strip())
+        return
+
+    if raw == "--run":
+        _show_dev_usage(ctx)
+        return
+    if raw.startswith("--run "):
+        _dev_run(ctx, raw[6:].strip())
+        return
+
+    if raw == "--status":
+        _dev_status(ctx)
+        return
+
+    # Default: plan mode
+    _dev_plan(ctx, raw)
+
+
 # (name, description, handler)
 _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("help",     "Show available commands",                         _cmd_help),
@@ -1785,6 +2098,7 @@ _COMMAND_TABLE: list[tuple[str, str, object]] = [
     ("workflow-pack", "Generate bounded context pack for a goal [goal|task-id]", _cmd_workflow_pack),
     ("workflow-run", "Run a bounded batch execution plan [--dry-run] [goal]", _cmd_workflow_run),
     ("workflow-resume", "Resume a workflow run from saved state [run-id]", _cmd_workflow_resume),
+    ("dev",      "Safe dev plan/dry-run/run/status [goal|task-id|--status]", _cmd_dev),
     ("plan",    "Phase1 wiki_strict analysis plan or current plan", _cmd_plan_wiki),
     ("plan-init", "Initialize a new planning run with a goal [goal]", _cmd_plan_init),
     ("plan-status", "Show current planning phase and open items", _cmd_plan_status),
