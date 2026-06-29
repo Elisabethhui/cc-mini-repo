@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+import typing
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -13,6 +14,10 @@ from .plan_graph import PlanGraph
 from .plan_task_bridge import PlanToTaskBridge
 from .runtime_state import RuntimeStateStore
 from .verification_runner import VerificationRunner, _is_safe_path, _resolve_within_workspace
+
+if typing.TYPE_CHECKING:
+    from .step_artifact_store import StepArtifactStore
+    from .task_spec_store import TaskSpecStore
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +61,25 @@ class StepResult:
             "next_action": self.next_action,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> StepResult:
+        return cls(
+            step_id=str(data.get("step_id", "")),
+            task_id=str(data.get("task_id", "")),
+            status=str(data.get("status", "")),
+            prompt_path=str(data.get("prompt_path", "")),
+            engine_called=bool(data.get("engine_called", False)),
+            engine_event_count=int(data.get("engine_event_count", 0)),
+            assistant_text_summary=str(data.get("assistant_text_summary", "")),
+            tool_calls_summary=list(data.get("tool_calls_summary", [])),
+            verification_result=dict(data.get("verification_result", {})),
+            task_result=dict(data.get("task_result", {})),
+            budget_report=dict(data.get("budget_report")) if data.get("budget_report") else None,
+            artifact_paths=list(data.get("artifact_paths", [])),
+            risks=list(data.get("risks", [])),
+            next_action=str(data.get("next_action", "")),
+        )
+
 
 # ---------------------------------------------------------------------------
 # StepExecutor
@@ -79,6 +103,8 @@ class StepExecutor:
         reserved_output_tokens: int = 2048,
         safety_margin_tokens: int = 1024,
         verification_runner: VerificationRunner | None = None,
+        task_store: TaskSpecStore | None = None,
+        step_artifact_store: StepArtifactStore | None = None,
     ):
         self.workspace = workspace.resolve()
         self.runtime_store = runtime_store
@@ -86,6 +112,8 @@ class StepExecutor:
         self.reserved_output_tokens = reserved_output_tokens
         self.safety_margin_tokens = safety_margin_tokens
         self.verification_runner = verification_runner or VerificationRunner()
+        self.task_store = task_store
+        self.step_artifact_store = step_artifact_store
 
     # ------------------------------------------------------------------
     # Public API
@@ -98,6 +126,9 @@ class StepExecutor:
         plan_graph: PlanGraph | None = None,
     ) -> TaskResult:
         """Execute a TaskSpec and return a TaskResult."""
+        if self.task_store is not None:
+            self.task_store.save_task_spec(task_spec, allow_overwrite=True)
+
         step_id = f"step-{task_spec.id}-{int(time.time())}"
 
         # Step 1: Validate
@@ -259,6 +290,13 @@ class StepExecutor:
         if plan_graph is not None:
             PlanToTaskBridge.update_plan_with_task_results(plan_graph, [task_result])
 
+        self._record_to_stores(
+            task_id=task_spec.id,
+            step_id=step_id,
+            task_result=task_result,
+            artifact_paths=list(artifact_paths.values()),
+        )
+
         return task_result
 
     # ------------------------------------------------------------------
@@ -419,7 +457,7 @@ class StepExecutor:
             risks=risks,
             next_action=next_action,
         )
-        self._persist_artifacts(
+        artifact_paths = self._persist_artifacts(
             step_id=step_id,
             prompt="",
             events=[],
@@ -435,6 +473,12 @@ class StepExecutor:
         )
         if plan_graph is not None:
             PlanToTaskBridge.update_plan_with_task_results(plan_graph, [task_result])
+        self._record_to_stores(
+            task_id=task_spec.id,
+            step_id=step_id,
+            task_result=task_result,
+            artifact_paths=list(artifact_paths.values()),
+        )
         return task_result
 
     def _persist_artifacts(
@@ -489,3 +533,21 @@ class StepExecutor:
             state["budget_reports"] = reports
         state["next_action"] = next_action
         self.runtime_store.save_state(state)
+
+    def _record_to_stores(
+        self,
+        task_id: str,
+        step_id: str,
+        task_result: TaskResult,
+        artifact_paths: list[Path],
+    ) -> None:
+        """Save task result and record step artifacts when stores are attached."""
+        if self.step_artifact_store is not None:
+            self.step_artifact_store.record_step(
+                task_id=task_id,
+                step_id=step_id,
+                artifact_paths=artifact_paths,
+                task_result=task_result,
+            )
+        if self.task_store is not None:
+            self.task_store.save_task_result(task_result)

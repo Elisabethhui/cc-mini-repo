@@ -57,6 +57,24 @@ class VerificationRunResult:
             "risks": list(self.risks),
         }
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> VerificationRunResult:
+        return cls(
+            kind=str(data.get("kind", "")),
+            command=list(data.get("command", [])),
+            expected_exit_code=int(data.get("expected_exit_code", 0)),
+            exit_code=data.get("exit_code"),
+            stdout=str(data.get("stdout", "")),
+            stderr=str(data.get("stderr", "")),
+            duration_seconds=float(data.get("duration_seconds", 0.0)),
+            passed=bool(data.get("passed", False)),
+            skipped=bool(data.get("skipped", False)),
+            timed_out=bool(data.get("timed_out", False)),
+            artifact_paths=list(data.get("artifact_paths", [])),
+            summary=str(data.get("summary", "")),
+            risks=list(data.get("risks", [])),
+        )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
